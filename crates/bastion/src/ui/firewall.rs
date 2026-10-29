@@ -4,7 +4,7 @@ use crate::app::{ConfirmData, ConfirmKind, GuiApp, Modal, Pending};
 use crate::components;
 use crate::theme::Palette;
 use bastion_core::model::*;
-use bastion_core::op::Op;
+use bastion_core::op::{Op, ServiceAction};
 use egui::{Align, Layout, RichText};
 
 pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
@@ -17,13 +17,19 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
         return;
     }
 
-    // Cartes d'état.
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing = egui::vec2(12.0, 12.0);
-        status_card(app, ui, p);
-        policy_card(app, ui, p);
-        logging_card(app, ui, p);
-    });
+    // Cartes d'état. La rangée défile horizontalement sur fenêtre étroite :
+    // les largeurs sont imposées, la rangée ne déborde jamais.
+    egui::ScrollArea::horizontal()
+        .id_salt("fw-top-cards")
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(12.0, 12.0);
+                status_card(app, ui, p);
+                policy_card(app, ui, p);
+                logging_card(app, ui, p);
+            });
+        });
     ui.add_space(12.0);
     rules_card(app, ui, p);
     ui.add_space(12.0);
@@ -62,8 +68,8 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
 // ─── Carte état ──────────────────────────────────────────────────────────────
 fn status_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     let t = app.tr;
-    components::card_body(ui, p, |ui| {
-        ui.set_min_width(230.0);
+    let width = 250.0;
+    components::card_body_w(ui, p, width, |ui| {
         let active = app.firewall.status.as_ref().map(|s| s.active).unwrap_or(false);
         let version = app.probe.0.clone().unwrap_or_default();
         let busy = app
@@ -100,11 +106,71 @@ fn status_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 ui.add(egui::Spinner::new().size(14.0));
             }
         });
+
+        // Service systemd ufw : état + démarrer / redémarrer / arrêter.
+        ui.add_space(10.0);
+        let svc = app
+            .firewall
+            .ufw_service
+            .clone()
+            .unwrap_or_else(|| t.state_unknown.to_string());
+        let svc_active = svc == "active";
+        let svc_col = if svc_active {
+            p.success
+        } else if svc == "failed" {
+            p.danger
+        } else {
+            p.text_secondary
+        };
+        ui.horizontal(|ui| {
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(12.0, 12.0), egui::Sense::hover());
+            ui.painter().circle_filled(rect.center(), 5.0, svc_col);
+            ui.label(
+                RichText::new(format!("{} · {}", t.service_label, svc))
+                    .size(12.5)
+                    .color(p.text_secondary),
+            );
+        });
+        ui.add_space(6.0);
+        let busy_svc = app
+            .pending
+            .values()
+            .any(|x| matches!(x, Pending::UfwService(_)));
+        ui.horizontal(|ui| {
+            if svc_active {
+                if components::ghost_button(ui, p, t.btn_restart).clicked() {
+                    app.modal = Some(Modal::Confirm(ConfirmData {
+                        title: t.ufw_restart_title.to_string(),
+                        body: t.ufw_restart_body.to_string(),
+                        confirm_label: t.btn_restart.to_string(),
+                        kind: ConfirmKind::RestartUfw,
+                    }));
+                }
+                if components::ghost_button(ui, p, t.btn_stop).clicked() {
+                    app.modal = Some(Modal::Confirm(ConfirmData {
+                        title: t.ufw_stop_title.to_string(),
+                        body: t.ufw_stop_body.to_string(),
+                        confirm_label: t.btn_stop.to_string(),
+                        kind: ConfirmKind::StopUfw,
+                    }));
+                }
+            } else if !busy_svc && app.firewall.ufw_service.is_some() {
+                if components::primary_button(ui, p, t.btn_start).clicked() {
+                    app.send_op(
+                        Pending::UfwService(ServiceAction::Start),
+                        Op::UfwServiceAction { action: ServiceAction::Start },
+                    );
+                }
+            }
+            if busy_svc {
+                ui.add(egui::Spinner::new().size(14.0));
+            }
+        });
+        ui.add_space(6.0);
+        components::hint(ui, p, t.ufw_service_hint);
+
         ui.add_space(2.0);
-        if ui
-            .add(egui::Button::new(RichText::new(t.show_raw_toggle).size(11.5)))
-            .clicked()
-        {
+        if components::styled_button(ui, p, t.show_raw_toggle, components::BtnKind::Soft).clicked() {
             app.firewall.show_raw = !app.firewall.show_raw;
         }
         if app.firewall.show_raw {
@@ -121,8 +187,7 @@ fn status_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
 // ─── Carte politiques ────────────────────────────────────────────────────────
 fn policy_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     let t = app.tr;
-    components::card_body(ui, p, |ui| {
-        ui.set_min_width(250.0);
+    components::card_body_w(ui, p, 260.0, |ui| {
         ui.label(
             RichText::new(t.policies_title.to_uppercase())
                 .size(11.5)
@@ -175,8 +240,7 @@ fn policy_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
 // ─── Carte journalisation ────────────────────────────────────────────────────
 fn logging_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     let t = app.tr;
-    components::card_body(ui, p, |ui| {
-        ui.set_min_width(230.0);
+    components::card_body_w(ui, p, 230.0, |ui| {
         ui.label(
             RichText::new(t.logging_title.to_uppercase())
                 .size(11.5)
@@ -294,16 +358,23 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                                     RuleAction::Limit => (p.accent, t.action_limit),
                                 };
                                 components::action_badge(ui, p, label, color);
-                                ui.label(RichText::new(&rule.from).monospace());
-                                ui.label(RichText::new(&rule.to).monospace());
+                                ui.label(RichText::new(ellipsize(&rule.from, 30)).monospace())
+                                    .on_hover_text(&rule.from);
+                                ui.label(RichText::new(ellipsize(&rule.to, 30)).monospace())
+                                    .on_hover_text(&rule.to);
                                 let mut dir_txt = t.rule_dir(rule.dir).to_string();
                                 if rule.ipv6 {
                                     dir_txt.push_str(" · v6");
                                 }
                                 ui.label(RichText::new(dir_txt).size(12.0).color(p.text_secondary));
                                 match &rule.comment {
-                                    Some(c) => ui.label(RichText::new(c).size(12.5)),
-                                    None => ui.label(RichText::new("—").weak()),
+                                    Some(c) => {
+                                        ui.label(RichText::new(ellipsize(c, 45)).size(12.5))
+                                            .on_hover_text(c);
+                                    }
+                                    None => {
+                                        ui.label(RichText::new("—").weak());
+                                    }
                                 };
                                 let desc = format!(
                                     "#{} — {} {} ({})",
@@ -355,4 +426,9 @@ fn header(p: &Palette, s: &str) -> RichText {
         .weak()
         .family(egui::FontFamily::Name("Medium".into()))
         .color(p.text_secondary)
+}
+
+/// Coupe proprement une chaîne (nombre de caractères) avec ellipse.
+pub fn ellipsize(s: &str, max: usize) -> String {
+    components::ellipsize(s, max)
 }

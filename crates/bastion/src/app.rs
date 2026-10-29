@@ -62,6 +62,8 @@ pub enum Pending {
     Unban { jail: String, ip: String },
     BannedAll,
     Service(ServiceAction),
+    UfwService(ServiceAction),
+    RefreshUfwService,
     ReloadJail,
     Logs,
 }
@@ -89,6 +91,8 @@ pub enum ConfirmKind {
     DeleteRule { index: u32 },
     StopF2b,
     RestartF2b,
+    StopUfw,
+    RestartUfw,
 }
 
 pub struct HostKeyCtx {
@@ -107,6 +111,9 @@ pub struct FirewallUi {
     pub profiles: Vec<String>,
     pub search: String,
     pub show_raw: bool,
+    /// État systemd du service ufw (« active », « inactive »…).
+    pub ufw_service: Option<String>,
+    pub ufw_service_at: Option<Instant>,
 }
 
 /// Données de l'écran Fail2Ban.
@@ -354,6 +361,8 @@ impl GuiApp {
                 profiles: Vec::new(),
                 search: String::new(),
                 show_raw: false,
+                ufw_service: None,
+                ufw_service_at: None,
             },
             f2b: F2bUi {
                 global: None,
@@ -401,6 +410,7 @@ impl GuiApp {
         self.send_op(Pending::RefreshRules, Op::UfwRules);
         self.send_op(Pending::RefreshF2b, Op::F2bStatus);
         self.send_op(Pending::RefreshService, Op::ServiceState);
+        self.send_op(Pending::RefreshUfwService, Op::UfwServiceState);
         if let Some(jail) = self.f2b.selected_jail.clone() {
             self.send_op(Pending::RefreshJail, Op::F2bJail { jail });
         }
@@ -409,7 +419,7 @@ impl GuiApp {
     pub fn is_refreshing(&self) -> bool {
         self.pending
             .values()
-            .any(|p| matches!(p, Pending::RefreshStatus | Pending::RefreshRules | Pending::RefreshF2b | Pending::RefreshService | Pending::RefreshJail))
+            .any(|p| matches!(p, Pending::RefreshStatus | Pending::RefreshRules | Pending::RefreshF2b | Pending::RefreshService | Pending::RefreshUfwService | Pending::RefreshJail))
     }
 
     // ── Journal / messages ────────────────────────────────────────────────
@@ -538,6 +548,12 @@ impl GuiApp {
                     self.f2b.service_at = Some(Instant::now());
                 }
             }
+            Pending::RefreshUfwService => {
+                if let OpResult::Text(s) = res {
+                    self.firewall.ufw_service = Some(s);
+                    self.firewall.ufw_service_at = Some(Instant::now());
+                }
+            }
             Pending::RefreshJail => {
                 if let OpResult::F2bJail(j) = res {
                     self.f2b.jail_infos.insert(j.name.clone(), (*j, Instant::now()));
@@ -639,6 +655,18 @@ impl GuiApp {
                     self.send_op(Pending::RefreshJail, Op::F2bJail { jail });
                 }
             }
+            Pending::UfwService(action) => {
+                let msg = match action {
+                    ServiceAction::Start => self.tr.toast_ufw_service_started,
+                    ServiceAction::Stop => self.tr.toast_ufw_service_stopped,
+                    ServiceAction::Restart => self.tr.toast_ufw_service_restarted,
+                    ServiceAction::ReloadOrRestart => self.tr.toast_ufw_service_restarted,
+                };
+                self.success(msg);
+                self.send_op(Pending::RefreshUfwService, Op::UfwServiceState);
+                self.send_op(Pending::RefreshStatus, Op::UfwStatus);
+                self.send_op(Pending::RefreshRules, Op::UfwRules);
+            }
             Pending::ReloadJail => {
                 self.success(self.tr.toast_jail_reloaded);
                 self.send_op(Pending::RefreshService, Op::ServiceState);
@@ -674,6 +702,7 @@ impl GuiApp {
                 | Pending::RefreshProfiles
                 | Pending::RefreshF2b
                 | Pending::RefreshService
+                | Pending::RefreshUfwService
                 | Pending::RefreshJail
         );
         if is_refresh {

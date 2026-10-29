@@ -148,18 +148,44 @@ fn sidebar(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
 
 fn nav_item(ui: &mut egui::Ui, p: &Palette, screen: Screen, icon: &str, label: &str, current: &mut Screen) {
     let selected = *current == screen;
-    let bg = if selected { p.card_hover } else { Color32::TRANSPARENT };
-    let fg = if selected { p.text } else { p.text_secondary };
-    let btn = egui::Button::new(
-        RichText::new(format!("{}  {}", icon, label))
-            .family(egui::FontFamily::Name("Medium".into()))
-            .color(fg)
-            .size(15.0),
-    )
-    .fill(bg)
-    .corner_radius(egui::CornerRadius::same(8))
-    .min_size(egui::vec2(ui.available_width(), 38.0));
-    if ui.add(btn).clicked() {
+    let width = ui.available_width();
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, 38.0), egui::Sense::click());
+    resp.widget_info(|| {
+        egui::WidgetInfo::selected(egui::Role::Button, true, selected, label)
+    });
+    let fill = if selected {
+        crate::components::blend(p.accent, p.card, 0.15)
+    } else if resp.hovered() {
+        p.card_hover
+    } else {
+        Color32::TRANSPARENT
+    };
+    ui.painter().rect(rect, egui::CornerRadius::same(9), fill, egui::Stroke::NONE, egui::StrokeKind::Inside);
+    // Indicateur vertical de l'écran actif.
+    if selected {
+        let ind = egui::Rect::from_min_size(
+            egui::pos2(rect.left() + 4.0, rect.center().y - 8.0),
+            egui::vec2(3.0, 16.0),
+        );
+        ui.painter().rect_filled(ind, egui::CornerRadius::same(2), p.accent);
+    }
+    let fg = if selected { p.accent } else { p.text_secondary };
+    let icon_g = ui.painter().layout_no_wrap(
+        icon.to_string(),
+        egui::FontId::new(17.0, egui::FontFamily::Name("Icon".into())),
+        fg,
+    );
+    let txt_g = ui.painter().layout_no_wrap(
+        label.to_string(),
+        egui::FontId::new(14.5, egui::FontFamily::Name("Medium".into())),
+        fg,
+    );
+    let y = rect.center().y;
+    let mut x = rect.left() + 14.0;
+    ui.painter().galley(egui::pos2(x, y - icon_g.size().y * 0.5), icon_g.clone(), fg);
+    x += icon_g.size().x + 10.0;
+    ui.painter().galley(egui::pos2(x, y - txt_g.size().y * 0.5), txt_g, fg);
+    if resp.clicked() {
         *current = screen;
     }
 }

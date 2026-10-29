@@ -19,11 +19,16 @@ fn show_modal(
     min_width: f32,
     body: impl FnOnce(&mut egui::Ui),
 ) -> bool {
+    // La largeur demandée est bornée à l'écran : les monospace longs ne
+    // doivent jamais pousser la modale hors de la fenêtre.
+    let max = (ctx.input(|i| i.viewport_rect().width()) - 48.0).max(280.0);
+    let width = min_width.min(max);
     let resp = egui::Modal::new(egui::Id::unique(id))
         .frame(components::modal_frame(p))
         .backdrop_color(Color32::from_black_alpha(170))
         .show(ctx, |ui| {
-            ui.set_min_width(min_width);
+            ui.set_min_width(width);
+            ui.set_max_width(width);
             components::modal_title(ui, p, title);
             body(ui);
         });
@@ -200,7 +205,7 @@ pub fn render(app: &mut GuiApp, ctx: &egui::Context, p: &Palette, modal: Modal) 
                 &format!("{} — ufw show listening", t.report_btn),
                 720.0,
                 |ui| {
-                    egui::ScrollArea::vertical()
+                    egui::ScrollArea::both()
                         .max_height(420.0)
                         .auto_shrink([false, false])
                         .show(ui, |ui| ui.monospace(&text));
@@ -221,7 +226,7 @@ pub fn render(app: &mut GuiApp, ctx: &egui::Context, p: &Palette, modal: Modal) 
             let mut close = false;
             let t = app.tr;
             let backdrop = show_modal(ctx, p, "sys-logs", &title, 760.0, |ui| {
-                egui::ScrollArea::vertical()
+                egui::ScrollArea::both()
                     .max_height(440.0)
                     .auto_shrink([false, false])
                     .show(ui, |ui| ui.monospace(&text));
@@ -316,6 +321,14 @@ fn apply_confirm(app: &mut GuiApp, kind: &ConfirmKind) {
         ConfirmKind::RestartF2b => app.send_op(
             Pending::Service(ServiceAction::Restart),
             Op::F2bServiceAction { action: ServiceAction::Restart },
+        ),
+        ConfirmKind::StopUfw => app.send_op(
+            Pending::UfwService(ServiceAction::Stop),
+            Op::UfwServiceAction { action: ServiceAction::Stop },
+        ),
+        ConfirmKind::RestartUfw => app.send_op(
+            Pending::UfwService(ServiceAction::Restart),
+            Op::UfwServiceAction { action: ServiceAction::Restart },
         ),
     }
 }

@@ -206,6 +206,15 @@ pub struct Tr {
     pub restart_f2b_body: &'static str,
     pub stop_f2b_title: &'static str,
     pub stop_f2b_body: &'static str,
+    // Service systemd ufw (carte état du pare-feu).
+    pub ufw_restart_title: &'static str,
+    pub ufw_restart_body: &'static str,
+    pub ufw_stop_title: &'static str,
+    pub ufw_stop_body: &'static str,
+    pub ufw_service_hint: &'static str,
+    pub toast_ufw_service_started: &'static str,
+    pub toast_ufw_service_stopped: &'static str,
+    pub toast_ufw_service_restarted: &'static str,
     pub delete_rule_title: &'static str,
     pub delete_rule_tooltip_t: &'static str, // {desc}
     pub reset_title: &'static str,

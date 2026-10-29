@@ -4,12 +4,123 @@
 
 use crate::icons;
 use crate::theme::Palette;
-use egui::{Align, Button, Color32, CornerRadius, Frame, Layout, Margin, RichText, Sense, Ui};
+use egui::{
+    Align, Color32, CornerRadius, FontId, Frame, Layout, Margin, RichText, Sense, Stroke,
+    StrokeKind, Ui,
+};
 
 /// Mélange une couleur vers un fond (k = part de la couleur).
 pub fn blend(c: Color32, bg: Color32, k: f32) -> Color32 {
     let mix = |a: u8, b: u8| -> u8 { ((a as f32) * (1.0 - k) + (b as f32) * k) as u8 };
     Color32::from_rgb(mix(bg.r(), c.r()), mix(bg.g(), c.g()), mix(bg.b(), c.b()))
+}
+
+const WHITE: Color32 = Color32::from_rgb(255, 255, 255);
+const BLACK: Color32 = Color32::from_rgb(0, 0, 0);
+
+/// Coupe proprement une chaîne (nombre de caractères) avec ellipse.
+/// Le texte intégral reste disponible via infobulle côté appelant.
+pub fn ellipsize(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        s.to_owned()
+    } else {
+        let cut: String = s.chars().take(max).collect();
+        format!("{cut}…")
+    }
+}
+
+/// Ombre douce réutilisable (cartes, boutons actifs).
+fn soft_shadow(alpha: u8) -> egui::Shadow {
+    egui::Shadow {
+        offset: [0, 1],
+        blur: 4,
+        spread: 0,
+        color: Color32::from_black_alpha(alpha),
+    }
+}
+
+// ─── Boutons (esprit uikit : états survol/appui, ombre discrète) ─────────────
+
+/// Variantes visuelles de bouton.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum BtnKind {
+    /// Action principale (accent plein).
+    Primary,
+    /// Action destructive (danger plein).
+    Danger,
+    /// Action secondaire (contour discret).
+    Ghost,
+    /// Action tertiaire (fond doux, sans contour).
+    Soft,
+}
+
+/// Bouton dessiné sur mesure : états survol/appui, ombre portée discrète,
+/// rayon homogène. Sobre : aucune couleur hors sémantique.
+pub fn styled_button(ui: &mut Ui, p: &Palette, label: &str, kind: BtnKind) -> egui::Response {
+    let enabled = ui.is_enabled();
+    let text_color = match kind {
+        BtnKind::Primary | BtnKind::Danger => WHITE,
+        _ => p.text,
+    };
+    let font = FontId::new(14.0, egui::FontFamily::Name("Medium".into()));
+    let galley = ui.painter().layout_no_wrap(
+        label.to_owned(),
+        font,
+        if enabled { text_color } else { p.text_secondary },
+    );
+    let pad = egui::vec2(16.0, 9.0);
+    let size = galley.size() + 2.0 * pad;
+    let sense = if enabled { Sense::click() } else { Sense::hover() };
+    let (rect, resp) = ui.allocate_exact_size(size, sense);
+    resp.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::Role::Button, enabled, label)
+    });
+
+    let hovered = enabled && resp.hovered();
+    let pressed = enabled && resp.is_pointer_button_down_on();
+    let base_fill = match kind {
+        BtnKind::Primary => p.accent,
+        BtnKind::Danger => p.danger,
+        BtnKind::Ghost => Color32::TRANSPARENT,
+        BtnKind::Soft => p.card_hover,
+    };
+    let (fill, stroke) = match kind {
+        BtnKind::Ghost => (
+            if pressed {
+                blend(p.card_hover, p.border, 0.35)
+            } else if hovered {
+                p.card_hover
+            } else {
+                Color32::TRANSPARENT
+            },
+            Stroke::new(1.0, if hovered { p.accent } else { p.border }),
+        ),
+        _ => {
+            let fill = if pressed {
+                blend(base_fill, BLACK, if p.dark { 0.20 } else { 0.14 })
+            } else if hovered {
+                blend(base_fill, WHITE, if p.dark { 0.12 } else { 0.07 })
+            } else {
+                base_fill
+            };
+            (fill, Stroke::NONE)
+        }
+    };
+    let radius = CornerRadius::same(10);
+
+    // Ombre portée douce sous les boutons pleins au survol.
+    if hovered && !matches!(kind, BtnKind::Ghost) {
+        let alpha = if p.dark { 70 } else { 45 };
+        let below = rect.translate(egui::vec2(0.0, 2.0));
+        ui.painter().add(
+            egui::epaint::RectShape::filled(below, radius, Color32::from_black_alpha(alpha))
+                .with_blur_width(6.0),
+        );
+    }
+    ui.painter().rect(rect, radius, fill, stroke, StrokeKind::Inside);
+    let tp = rect.center() - galley.size() * 0.5;
+    ui.painter().galley(tp, galley, text_color);
+    resp
 }
 
 /// Carte avec en-tête (titre majuscules espacées + actions à droite).
@@ -20,52 +131,70 @@ pub fn card<R>(
     actions: impl FnOnce(&mut Ui),
     body: impl FnOnce(&mut Ui) -> R,
 ) -> R {
-    Frame::NONE
-        .fill(p.card)
-        .stroke(egui::Stroke::new(1.0, p.border))
-        .corner_radius(CornerRadius::same(12))
-        .inner_margin(Margin::same(16))
-        .show(ui, |ui| {
-            ui.set_min_width(ui.available_width() - 2.0);
-            ui.add_space(2.0);
-            ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new(title.to_uppercase())
-                        .size(11.5)
-                        .weak()
-                        .family(egui::FontFamily::Name("Medium".into())),
-                );
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.style_mut().spacing.item_spacing = egui::vec2(6.0, 6.0);
-                    actions(ui);
-                });
+    card_frame(ui, p, |ui| {
+        ui.set_min_width(ui.available_width() - 2.0);
+        ui.add_space(2.0);
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new(title.to_uppercase())
+                    .size(11.5)
+                    .weak()
+                    .family(egui::FontFamily::Name("Medium".into())),
+            );
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.style_mut().spacing.item_spacing = egui::vec2(6.0, 6.0);
+                actions(ui);
             });
-            ui.add_space(6.0);
-            body(ui)
-        })
-        .inner
+        });
+        ui.add_space(6.0);
+        body(ui)
+    })
 }
 
-/// Carte sans en-tête.
-pub fn card_body<R>(ui: &mut Ui, p: &Palette, body: impl FnOnce(&mut Ui) -> R) -> R {
+/// Cadre de carte : fond, bordure, rayon et ombre discrète.
+fn card_frame<R>(ui: &mut Ui, p: &Palette, body: impl FnOnce(&mut Ui) -> R) -> R {
     Frame::NONE
         .fill(p.card)
         .stroke(egui::Stroke::new(1.0, p.border))
         .corner_radius(CornerRadius::same(12))
         .inner_margin(Margin::same(16))
-        .show(ui, |ui| {
-            ui.set_min_width(ui.available_width() - 2.0);
-            body(ui)
-        })
+        .shadow(soft_shadow(if p.dark { 55 } else { 20 }))
+        .show(ui, body)
         .inner
 }
 
-/// Interrupteur à bascule (52×28 px, animé).
+/// Carte sans en-tête, occupant la largeur disponible.
+pub fn card_body<R>(ui: &mut Ui, p: &Palette, body: impl FnOnce(&mut Ui) -> R) -> R {
+    card_frame(ui, p, |ui| {
+        ui.set_min_width(ui.available_width() - 2.0);
+        body(ui)
+    })
+}
+
+/// Carte sans en-tête, à largeur imposée. À utiliser dans une rangée
+/// horizontale : `set_min_width(available)` y ferait déborder la carte
+/// hors de la fenêtre.
+pub fn card_body_w<R>(
+    ui: &mut Ui,
+    p: &Palette,
+    width: f32,
+    body: impl FnOnce(&mut Ui) -> R,
+) -> R {
+    card_frame(ui, p, |ui| {
+        ui.set_min_width(width);
+        body(ui)
+    })
+}
+
+/// Interrupteur à bascule (52×28 px, animé, anneau au survol).
 pub fn switch(ui: &mut Ui, p: &Palette, on: bool, accent: Option<Color32>) -> bool {
     let id = ui.scope_id().with("switch");
     let animated = ui.ctx().animate_bool(id, on);
     let size = egui::vec2(52.0, 28.0);
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+    resp.widget_info(|| {
+        egui::WidgetInfo::selected(egui::Role::CheckBox, ui.is_enabled(), on, "")
+    });
     let track = CornerRadius::same(14);
     let bg = if on {
         accent.unwrap_or(p.success)
@@ -76,11 +205,23 @@ pub fn switch(ui: &mut Ui, p: &Palette, on: bool, accent: Option<Color32>) -> bo
     // Position du bouton : 2 px de marge.
     let travel = rect.width() - 28.0;
     let x = rect.left() + 2.0 + animated * travel;
-    let knob_rect = egui::Rect::from_min_size(
+    let knob = egui::Rect::from_min_size(
         egui::pos2(x, rect.center().y - 11.0),
         egui::vec2(22.0, 22.0),
     );
-    ui.painter().circle_filled(knob_rect.center(), 11.0, Color32::WHITE);
+    // Anneau de survol + ombre du curseur.
+    if resp.hovered() {
+        ui.painter().circle_filled(
+            knob.center(),
+            13.0,
+            Color32::from_black_alpha(if p.dark { 60 } else { 30 }),
+        );
+    }
+    ui.painter().add(
+        egui::epaint::RectShape::filled(knob.translate(egui::vec2(0.0, 1.0)), CornerRadius::same(11), Color32::from_black_alpha(if p.dark { 80 } else { 45 }))
+            .with_blur_width(4.0),
+    );
+    ui.painter().circle_filled(knob.center(), 11.0, Color32::WHITE);
     if resp.clicked() {
         !on
     } else {
@@ -88,7 +229,8 @@ pub fn switch(ui: &mut Ui, p: &Palette, on: bool, accent: Option<Color32>) -> bo
     }
 }
 
-/// Sélecteur segmenté. Retourne vrai si la valeur a changé.
+/// Sélecteur segmenté en pastille (segment actif : accent + ombre douce).
+/// Retourne vrai si la valeur a changé.
 pub fn segmented<T: PartialEq + Copy>(
     ui: &mut Ui,
     p: &Palette,
@@ -96,27 +238,49 @@ pub fn segmented<T: PartialEq + Copy>(
     value: &mut T,
 ) -> bool {
     let mut changed = false;
-    ui.horizontal(|ui| {
-        for (i, (v, label)) in variants.iter().enumerate() {
-            let selected = *value == *v;
-            let bg = if selected { p.accent } else { p.card_hover };
-            let fg = if selected { Color32::WHITE } else { p.text };
-            let btn = Button::new(
-                RichText::new(*label)
-                    .color(fg)
-                    .family(egui::FontFamily::Name("Medium".into())),
-            )
-            .fill(bg)
-            .corner_radius(8);
-            if ui.add(btn).clicked() && *value != *v {
-                *value = *v;
-                changed = true;
+    Frame::NONE
+        .fill(p.row_alt)
+        .corner_radius(CornerRadius::same(11))
+        .inner_margin(Margin::same(3))
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(2.0, 0.0);
+            for (v, label) in variants {
+                let selected = *value == *v;
+                let text_col = if selected { WHITE } else { p.text_secondary };
+                let font = FontId::new(12.5, egui::FontFamily::Name("Medium".into()));
+                let galley = ui.painter().layout_no_wrap(label.to_string(), font, text_col);
+                let w = galley.size().x + 22.0;
+                let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 26.0), Sense::click());
+                resp.widget_info(|| {
+                    egui::WidgetInfo::selected(egui::Role::Button, true, selected, label)
+                });
+                if selected {
+                    let below = rect.translate(egui::vec2(0.0, 1.0));
+                    ui.painter().add(
+                        egui::epaint::RectShape::filled(
+                            below,
+                            CornerRadius::same(9),
+                            Color32::from_black_alpha(if p.dark { 55 } else { 28 }),
+                        )
+                        .with_blur_width(4.0),
+                    );
+                }
+                let fill = if selected {
+                    p.accent
+                } else if resp.hovered() {
+                    p.card_hover
+                } else {
+                    Color32::TRANSPARENT
+                };
+                ui.painter().rect(rect, CornerRadius::same(9), fill, Stroke::NONE, StrokeKind::Inside);
+                ui.painter().galley(rect.center() - galley.size() * 0.5, galley, text_col);
+                if resp.clicked() && !selected {
+                    *value = *v;
+                    changed = true;
+                }
             }
-            if i < variants.len() - 1 {
-                ui.add_space(2.0);
-            }
-        }
-    });
+        })
+        .inner;
     changed
 }
 
@@ -160,47 +324,42 @@ pub fn status_line(ui: &mut Ui, p: &Palette, color: Color32, label: &str, sub: O
 
 /// Bouton principal (accent plein).
 pub fn primary_button(ui: &mut Ui, p: &Palette, label: &str) -> egui::Response {
-    ui.add(
-        Button::new(
-            RichText::new(label)
-                .color(Color32::WHITE)
-                .family(egui::FontFamily::Name("Medium".into())),
-        )
-        .fill(p.accent),
-    )
+    styled_button(ui, p, label, BtnKind::Primary)
 }
 
 /// Petit bouton principal avec icône (« + Ajouter »).
 pub fn primary_button_small(ui: &mut Ui, p: &Palette, icon: &str, label: &str) -> egui::Response {
-    ui.add(
-        Button::new(
-            RichText::new(format!("{}  {}", icon, label))
-                .color(Color32::WHITE)
-                .size(13.5)
-                .family(egui::FontFamily::Name("Medium".into())),
-        )
-        .fill(p.accent),
-    )
+    styled_button(ui, p, &format!("{}  {}", icon, label), BtnKind::Primary)
 }
 
 /// Bouton destructif (danger plein).
 pub fn danger_button(ui: &mut Ui, p: &Palette, label: &str) -> egui::Response {
-    ui.add(
-        Button::new(
-            RichText::new(label)
-                .color(Color32::WHITE)
-                .family(egui::FontFamily::Name("Medium".into())),
-        )
-        .fill(p.danger),
-    )
+    styled_button(ui, p, label, BtnKind::Danger)
+}
+
+/// Bouton secondaire (contour discret).
+pub fn ghost_button(ui: &mut Ui, p: &Palette, label: &str) -> egui::Response {
+    styled_button(ui, p, label, BtnKind::Ghost)
 }
 
 /// Bouton icône discret, libellé en infobulle.
-pub fn icon_button(ui: &mut Ui, _p: &Palette, icon: &str, tooltip: &str) -> egui::Response {
-    let b = Button::new(icons::icon(icon).size(17.0))
-        .fill(Color32::TRANSPARENT)
-        .corner_radius(6);
-    let resp = ui.add(b);
+pub fn icon_button(ui: &mut Ui, p: &Palette, icon: &str, tooltip: &str) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(30.0, 30.0), Sense::click());
+    let hovered = resp.hovered();
+    let pressed = resp.is_pointer_button_down_on();
+    let fill = if pressed {
+        blend(p.card_hover, p.border, 0.35)
+    } else if hovered {
+        p.card_hover
+    } else {
+        Color32::TRANSPARENT
+    };
+    ui.painter().rect(rect, CornerRadius::same(8), fill, Stroke::NONE, StrokeKind::Inside);
+    let col = if hovered { p.text } else { p.text_secondary };
+    let font = FontId::new(17.0, egui::FontFamily::Name("Icon".into()));
+    let galley = ui.painter().layout_no_wrap(icon.to_string(), font, col);
+    ui.painter().galley(rect.center() - galley.size() * 0.5, galley, col);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, tooltip));
     resp.on_hover_text(tooltip)
 }
 

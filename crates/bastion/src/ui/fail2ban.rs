@@ -34,8 +34,7 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
 // ─── Carte service ───────────────────────────────────────────────────────────
 fn service_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     let t = app.tr;
-    components::card_body(ui, p, |ui| {
-        ui.set_min_width(300.0);
+    components::card_body_w(ui, p, 310.0, |ui| {
         let state = app.f2b.service.clone().unwrap_or_else(|| t.state_unknown.to_string());
         let active = state == "active";
         let color = if active {
@@ -96,8 +95,7 @@ fn service_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
 // ─── Carte synthèse ──────────────────────────────────────────────────────────
 fn summary_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     let t = app.tr;
-    components::card_body(ui, p, |ui| {
-        ui.set_min_width(220.0);
+    components::card_body_w(ui, p, 220.0, |ui| {
         let (jails, banned) = match &app.f2b.global {
             Some(g) => {
                 let b: u64 = g
@@ -295,7 +293,8 @@ fn jail_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette, jail: &str) {
             if let Some(files) = &info.file_list {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(t.watches_label).size(12.5).color(p.text_secondary));
-                    ui.monospace(files);
+                    ui.label(RichText::new(components::ellipsize(files, 60)).monospace())
+                        .on_hover_text(files);
                 });
             }
             ui.add_space(8.0);

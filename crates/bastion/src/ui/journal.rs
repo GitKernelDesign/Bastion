@@ -71,7 +71,8 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 .color(p.text_secondary),
         );
 
-        egui::ScrollArea::vertical()
+        egui::ScrollArea::both()
+            .id_salt("journal-scroll")
             .max_height(560.0)
             .auto_shrink([false, false])
             .show(ui, |ui| {
@@ -102,14 +103,18 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                                     .color(if entry.ok { p.success } else { p.danger }),
                             );
                             ui.vertical(|ui| {
-                                ui.label(RichText::new(&entry.command).monospace().size(12.0));
+                                ui.label(
+                                    RichText::new(components::ellipsize(&entry.command, 120)).monospace().size(12.0),
+                                )
+                                .on_hover_text(&entry.command);
                                 if !entry.ok && !entry.detail.is_empty() {
                                     ui.label(
-                                        RichText::new(&entry.detail)
+                                        RichText::new(components::ellipsize(&entry.detail, 160))
                                             .monospace()
                                             .size(11.0)
                                             .color(p.danger),
-                                    );
+                                    )
+                                    .on_hover_text(&entry.detail);
                                 }
                             });
                             ui.end_row();

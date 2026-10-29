@@ -108,11 +108,11 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             ui.label(RichText::new(t.config_path_label).size(12.5).color(p.text_secondary));
-            ui.monospace(
-                crate::config::AppConfig::config_path()
-                    .to_string_lossy()
-                    .as_ref(),
-            );
+            let path = crate::config::AppConfig::config_path()
+                .to_string_lossy()
+                .to_string();
+            ui.label(RichText::new(components::ellipsize(&path, 58)).monospace())
+                .on_hover_text(&path);
         });
         components::hint(ui, p, t.files_hint);
     });

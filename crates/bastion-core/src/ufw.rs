@@ -3,7 +3,7 @@
 use crate::error::CoreError;
 use crate::exec::{CommandSpec, Program};
 use crate::model::*;
-use crate::transport::{exec_checked, Transport};
+use crate::transport::{exec_checked, exec_lax, Transport};
 
 /// Parse la sortie de `ufw status verbose`.
 pub fn parse_status_verbose(raw: &str) -> FirewallStatus {
@@ -389,6 +389,34 @@ pub async fn app_profiles(t: &dyn Transport) -> Result<Vec<String>, CoreError> {
 
 pub async fn report(t: &dyn Transport) -> Result<String, CoreError> {
     exec_checked(t, &CommandSpec::new(Program::Ufw, &["show", "listening"])).await
+}
+
+/// État systemd du service ufw : « active », « inactive », « failed »…
+pub async fn service_state(t: &dyn Transport) -> Result<String, CoreError> {
+    let out = exec_lax(
+        t,
+        &CommandSpec::new(Program::Systemctl, &["is-active", "ufw"]),
+    )
+    .await?;
+    Ok(out.stdout.trim().to_string())
+}
+
+/// Action de service systemd sur l'unité ufw (start/stop/restart…).
+pub async fn service_action(t: &dyn Transport, action: &str) -> Result<(), CoreError> {
+    let out = exec_lax(
+        t,
+        &CommandSpec::new(Program::Systemctl, &[action, "ufw"]),
+    )
+    .await?;
+    if out.success() {
+        Ok(())
+    } else {
+        Err(CoreError::CommandFailed {
+            program: "systemctl".into(),
+            code: out.code,
+            stderr: out.stderr.trim().to_string(),
+        })
+    }
 }
 
 #[cfg(test)]

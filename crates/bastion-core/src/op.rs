@@ -55,6 +55,12 @@ pub enum Op {
     },
     UfwAppProfiles,
     UfwReport,
+    /// État systemd du service ufw (« active », « inactive »…).
+    UfwServiceState,
+    /// Action systemd sur le service ufw (start/stop/restart).
+    UfwServiceAction {
+        action: ServiceAction,
+    },
     // Fail2Ban
     F2bStatus,
     /// Détails d'une prison (status + bannedips + paramètres).
@@ -116,6 +122,8 @@ impl Op {
             Op::UfwDeleteRule { .. } => "UFW : suppression de règle",
             Op::UfwAppProfiles => "UFW : profils",
             Op::UfwReport => "UFW : rapport",
+            Op::UfwServiceState => "UFW : état du service",
+            Op::UfwServiceAction { .. } => "UFW : service",
             Op::F2bStatus => "Fail2Ban : état",
             Op::F2bJail { .. } => "Fail2Ban : prison",
             Op::F2bBanIp { .. } => "Fail2Ban : bannissement",
@@ -155,6 +163,10 @@ pub async fn run_op(t: &dyn Transport, op: &Op) -> Result<OpResult, CoreError> {
         }
         Op::UfwAppProfiles => ufw::app_profiles(t).await.map(OpResult::AppProfiles),
         Op::UfwReport => ufw::report(t).await.map(OpResult::Report),
+        Op::UfwServiceState => ufw::service_state(t).await.map(OpResult::Text),
+        Op::UfwServiceAction { action } => {
+            ufw::service_action(t, action.systemctl_name()).await.map(|_| OpResult::Ack)
+        }
         Op::F2bStatus => f2b::global_status(t).await.map(|g| OpResult::F2bGlobal(Box::new(g))),
         Op::F2bJail { jail } => f2b::jail_status(t, jail).await.map(|j| OpResult::F2bJail(Box::new(j))),
         Op::F2bBanIp { jail, ip } => f2b::ban_ip(t, jail, ip).await.map(|_| OpResult::Ack),
@@ -280,5 +292,23 @@ mod tests {
             ok_out("1\n"),
         );
         run_op(&t, &Op::F2bBanIp { jail: "sshd".into(), ip: "1.2.3.4".into() }).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn op_ufw_service_etat_et_redemarrage() {
+        let t = t_with(
+            CommandSpec::new(crate::exec::Program::Systemctl, &["is-active", "ufw"]),
+            ok_out("active\n"),
+        );
+        match run_op(&t, &Op::UfwServiceState).await.unwrap() {
+            OpResult::Text(s) => assert_eq!(s, "active"),
+            other => panic!("mauvais type de résultat : {other:?}"),
+        }
+
+        let t = t_with(
+            CommandSpec::new(crate::exec::Program::Systemctl, &["restart", "ufw"]),
+            ok_out(""),
+        );
+        run_op(&t, &Op::UfwServiceAction { action: ServiceAction::Restart }).await.unwrap();
     }
 }
