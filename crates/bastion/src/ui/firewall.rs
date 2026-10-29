@@ -17,19 +17,13 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
         return;
     }
 
-    // Cartes d'état. La rangée défile horizontalement sur fenêtre étroite :
-    // les largeurs sont imposées, la rangée ne déborde jamais.
-    egui::ScrollArea::horizontal()
-        .id_salt("fw-top-cards")
-        .auto_shrink([false, true])
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing = egui::vec2(12.0, 12.0);
-                status_card(app, ui, p);
-                policy_card(app, ui, p);
-                logging_card(app, ui, p);
-            });
-        });
+    // Cartes empilées verticalement : état, puis politiques par défaut,
+    // puis journalisation, chacune en pleine largeur.
+    status_card(app, ui, p);
+    ui.add_space(12.0);
+    policy_card(app, ui, p);
+    ui.add_space(12.0);
+    logging_card(app, ui, p);
     ui.add_space(12.0);
     rules_card(app, ui, p);
     ui.add_space(12.0);
@@ -68,8 +62,7 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
 // ─── Carte état ──────────────────────────────────────────────────────────────
 fn status_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     let t = app.tr;
-    let width = 250.0;
-    components::card_body_w(ui, p, width, |ui| {
+    components::card_body(ui, p, |ui| {
         let active = app.firewall.status.as_ref().map(|s| s.active).unwrap_or(false);
         let version = app.probe.0.clone().unwrap_or_default();
         let busy = app
@@ -187,7 +180,7 @@ fn status_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
 // ─── Carte politiques ────────────────────────────────────────────────────────
 fn policy_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     let t = app.tr;
-    components::card_body_w(ui, p, 260.0, |ui| {
+    components::card_body(ui, p, |ui| {
         ui.label(
             RichText::new(t.policies_title.to_uppercase())
                 .size(11.5)
@@ -240,7 +233,7 @@ fn policy_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
 // ─── Carte journalisation ────────────────────────────────────────────────────
 fn logging_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     let t = app.tr;
-    components::card_body_w(ui, p, 230.0, |ui| {
+    components::card_body(ui, p, |ui| {
         ui.label(
             RichText::new(t.logging_title.to_uppercase())
                 .size(11.5)
@@ -279,6 +272,7 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     let n = app.firewall.rules.len();
     let mut refresh_clicked = false;
     let mut add_clicked = false;
+    let mut quick_add = false;
 
     components::card(
         ui,
@@ -293,6 +287,61 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
             }
         },
         |ui| {
+            // Ajout rapide : port ou service + options UFW (protocole,
+            // direction, action). La rangée défile si la fenêtre est étroite.
+            egui::ScrollArea::horizontal()
+                .id_salt("quick-add")
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing = egui::vec2(10.0, 8.0);
+                        let resp = ui.add(
+                            egui::TextEdit::singleline(&mut app.firewall.quick_port)
+                                .hint_text(t.hint_port)
+                                .desired_width(230.0)
+                                .font(egui::TextStyle::Monospace),
+                        );
+                        if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                            quick_add = true;
+                        }
+                        let mut proto = app.firewall.quick_proto;
+                        components::segmented(
+                            ui,
+                            p,
+                            &[(Proto::Tcp, t.proto_tcp), (Proto::Udp, t.proto_udp), (Proto::Any, t.proto_any)],
+                            &mut proto,
+                        );
+                        app.firewall.quick_proto = proto;
+                        let mut dir = app.firewall.quick_dir;
+                        components::segmented(
+                            ui,
+                            p,
+                            &[(NewRuleDir::In, t.dir_inbound), (NewRuleDir::Out, t.dir_outbound)],
+                            &mut dir,
+                        );
+                        app.firewall.quick_dir = dir;
+                        let mut action = app.firewall.quick_action;
+                        components::segmented(
+                            ui,
+                            p,
+                            &[
+                                (RuleAction::Allow, t.action_allow),
+                                (RuleAction::Deny, t.action_deny),
+                                (RuleAction::Reject, t.action_reject),
+                                (RuleAction::Limit, t.action_limit),
+                            ],
+                            &mut action,
+                        );
+                        app.firewall.quick_action = action;
+                        if components::primary_button_small(ui, p, crate::icons::ADD, t.btn_add)
+                            .on_hover_text(t.hint_port)
+                            .clicked()
+                        {
+                            quick_add = true;
+                        }
+                    });
+                });
+            ui.add_space(8.0);
             ui.horizontal(|ui| {
                 ui.label(crate::icons::icon(crate::icons::SEARCH));
                 ui.add(
@@ -410,6 +459,28 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
 
     if refresh_clicked {
         app.send_op(Pending::RefreshRules, Op::UfwRules);
+    }
+    if quick_add {
+        // Validation identique au formulaire complet (port, plage, liste,
+        // nom de service, « port/proto »…).
+        let form = crate::app::AddRuleForm {
+            action: app.firewall.quick_action,
+            dir: app.firewall.quick_dir,
+            port: app.firewall.quick_port.trim().to_string(),
+            proto: app.firewall.quick_proto,
+            ..Default::default()
+        };
+        match form.to_new_rule() {
+            Ok(rule) => {
+                app.firewall.quick_port.clear();
+                app.send_op(Pending::AddRule, Op::UfwAddRule { rule });
+            }
+            Err(e) => {
+                let msg = app.tr.form_error(e).to_string();
+                app.status_msg = msg.clone();
+                app.toasts.error(msg);
+            }
+        }
     }
     if add_clicked {
         app.add_form = crate::app::AddRuleForm::default();

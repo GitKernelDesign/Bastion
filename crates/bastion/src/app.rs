@@ -114,6 +114,11 @@ pub struct FirewallUi {
     /// État systemd du service ufw (« active », « inactive »…).
     pub ufw_service: Option<String>,
     pub ufw_service_at: Option<Instant>,
+    /// Ajout rapide de règle (port/service + options UFW).
+    pub quick_port: String,
+    pub quick_proto: Proto,
+    pub quick_dir: NewRuleDir,
+    pub quick_action: RuleAction,
 }
 
 /// Données de l'écran Fail2Ban.
@@ -363,6 +368,10 @@ impl GuiApp {
                 show_raw: false,
                 ufw_service: None,
                 ufw_service_at: None,
+                quick_port: String::new(),
+                quick_proto: Proto::Tcp,
+                quick_dir: NewRuleDir::In,
+                quick_action: RuleAction::Allow,
             },
             f2b: F2bUi {
                 global: None,
