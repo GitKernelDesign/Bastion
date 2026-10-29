@@ -213,7 +213,6 @@ pub fn is_valid_port_spec(s: &str) -> bool {
 /// Construit les arguments `ufw` d'une nouvelle règle.
 pub fn build_rule_args(rule: &NewRule) -> Result<Vec<String>, CoreError> {
     let mut args: Vec<String> = Vec::new();
-
     if let Some(pos) = rule.insert_at {
         if pos == 0 {
             return Err(CoreError::Other(
@@ -223,62 +222,100 @@ pub fn build_rule_args(rule: &NewRule) -> Result<Vec<String>, CoreError> {
         args.push("insert".into());
         args.push(pos.to_string());
     }
-
     args.push(rule.action.ufw_name().to_string());
-    if let NewRuleDir::Out = rule.dir {
-        args.push("out".into());
-    } else {
-        args.push("in".into());
-    }
 
+    // Profil d'application : « allow Apache Full » (entrée par défaut).
     if let Some(profile) = &rule.app_profile {
-        // Profil d'application : « allow in Apache Full ».
         if rule.port.is_some() || rule.from_addr.is_some() || rule.to_addr.is_some() {
             return Err(CoreError::Other(
                 "un profil d'application ne se combine pas avec port/adresses".into(),
             ));
         }
+        if rule.dir == NewRuleDir::Out {
+            args.push("out".into());
+        }
         args.push(profile.clone());
-    } else {
-        let port = rule
-            .port
-            .as_deref()
-            .map(str::trim)
-            .ok_or_else(|| CoreError::Other("le port est obligatoire".into()))?;
-        if !is_valid_port_spec(port) {
-            return Err(CoreError::Other(format!("port « {port} » invalide")));
+        if let Some(c) = trimmed_comment(rule) {
+            args.push("comment".into());
+            args.push(c);
         }
-        if let Some(from) = &rule.from_addr {
-            if !is_valid_addr(from) {
-                return Err(CoreError::Other(format!("adresse source « {from} » invalide")));
+        return Ok(args);
+    }
+
+    let port = rule
+        .port
+        .as_deref()
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .ok_or_else(|| CoreError::Other("le port est obligatoire".into()))?;
+    if !is_valid_port_spec(port) {
+        return Err(CoreError::Other(format!("port « {port} » invalide")));
+    }
+    for (label, addr) in [("source", &rule.from_addr), ("destination", &rule.to_addr)] {
+        if let Some(a) = addr.as_deref().map(str::trim).filter(|a| !a.is_empty()) {
+            if !is_valid_addr(a) {
+                return Err(CoreError::Other(format!(
+                    "adresse {label} « {a} » invalide"
+                )));
             }
-            args.push("from".into());
-            args.push(from.clone());
         }
-        if let Some(to) = &rule.to_addr {
-            if !is_valid_addr(to) {
-                return Err(CoreError::Other(format!("adresse destination « {to} » invalide")));
-            }
-            args.push("to".into());
-            args.push(to.clone());
+    }
+    let from = rule.from_addr.as_deref().map(str::trim).filter(|a| !a.is_empty());
+    let to = rule.to_addr.as_deref().map(str::trim).filter(|a| !a.is_empty());
+    let comment = trimmed_comment(rule);
+
+    // Forme simple (pas d'adresses, pas de commentaire) : le protocole fait
+    // partie du spécificateur de port — « allow 8080/tcp ».
+    if from.is_none() && to.is_none() && comment.is_none() {
+        let spec = match rule.proto {
+            Proto::Tcp => format!("{port}/tcp"),
+            Proto::Udp => format!("{port}/udp"),
+            Proto::Any => port.to_string(),
+        };
+        if rule.dir == NewRuleDir::Out {
+            args.push("out".into());
         }
-        args.push("port".into());
-        args.push(port.to_string());
-        if let Proto::Tcp = rule.proto {
+        args.push(spec);
+        return Ok(args);
+    }
+
+    // Forme à clauses (adresses et/ou commentaire) — validée contre ufw 0.36 :
+    // « allow [in|out] from A [to B] port P [proto T] [comment 'x'] ».
+    if rule.dir == NewRuleDir::Out {
+        args.push("out".into());
+    }
+    args.push("from".into());
+    args.push(from.unwrap_or("any").to_string());
+    if let Some(t) = to {
+        args.push("to".into());
+        args.push(t.to_string());
+    }
+    args.push("port".into());
+    args.push(port.to_string());
+    match rule.proto {
+        Proto::Tcp => {
             args.push("proto".into());
             args.push("tcp".into());
-        } else if let Proto::Udp = rule.proto {
+        }
+        Proto::Udp => {
             args.push("proto".into());
             args.push("udp".into());
         }
+        Proto::Any => {}
     }
-
-    if let Some(comment) = rule.comment.as_deref().map(str::trim).filter(|c| !c.is_empty()) {
+    if let Some(c) = comment {
         args.push("comment".into());
-        args.push(comment.to_string());
+        args.push(c);
     }
-
     Ok(args)
+}
+
+fn trimmed_comment(rule: &NewRule) -> Option<String> {
+    rule.comment
+        .as_deref()
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+        .map(str::to_string)
 }
 
 pub async fn status(t: &dyn Transport) -> Result<FirewallStatus, CoreError> {
@@ -351,7 +388,7 @@ pub async fn app_profiles(t: &dyn Transport) -> Result<Vec<String>, CoreError> {
 }
 
 pub async fn report(t: &dyn Transport) -> Result<String, CoreError> {
-    exec_checked(t, &CommandSpec::new(Program::Ufw, &["show", "report"])).await
+    exec_checked(t, &CommandSpec::new(Program::Ufw, &["show", "listening"])).await
 }
 
 #[cfg(test)]
@@ -488,18 +525,33 @@ Status: active
         assert_eq!(
             args,
             vec![
-                "insert", "1", "allow", "in", "from", "10.0.0.0/8", "port", "8080", "proto",
+                "insert", "1", "allow", "from", "10.0.0.0/8", "port", "8080", "proto",
                 "tcp", "comment", "serveur web"
             ]
         );
 
+        // Forme simple : proto intégré au port, pas de « in » superflu.
         rule.action = RuleAction::Deny;
         rule.dir = NewRuleDir::Out;
         rule.insert_at = None;
         rule.from_addr = None;
         rule.comment = None;
         let args = build_rule_args(&rule).unwrap();
-        assert_eq!(args, vec!["deny", "out", "port", "8080", "proto", "tcp"]);
+        assert_eq!(args, vec!["deny", "out", "8080/tcp"]);
+
+        // TCP explicite sans adresses ni commentaire.
+        rule.dir = NewRuleDir::In;
+        rule.proto = Proto::Tcp;
+        let args = build_rule_args(&rule).unwrap();
+        assert_eq!(args, vec!["deny", "8080/tcp"]);
+
+        // Commentaire seul → forme à clauses avec « from any ».
+        rule.comment = Some("web interne".into());
+        let args = build_rule_args(&rule).unwrap();
+        assert_eq!(
+            args,
+            vec!["deny", "from", "any", "port", "8080", "proto", "tcp", "comment", "web interne"]
+        );
 
         // Profil d'application seul.
         let rule = NewRule {
@@ -514,7 +566,7 @@ Status: active
             comment: None,
         };
         let args = build_rule_args(&rule).unwrap();
-        assert_eq!(args, vec!["allow", "in", "Apache Full"]);
+        assert_eq!(args, vec!["allow", "Apache Full"]);
 
         // Incohérences refusées.
         let mut bad = rule.clone();

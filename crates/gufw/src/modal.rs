@@ -222,7 +222,7 @@ pub fn render(app: &mut GuiApp, ctx: &egui::Context, p: &Palette, modal: Modal) 
 
         Modal::Report(text) => {
             let mut close = false;
-            let backdrop = show_modal(ctx, p, "report", "Rapport UFW", 720.0, |ui| {
+            let backdrop = show_modal(ctx, p, "report", "Rapport — ports en écoute (ufw show listening)", 720.0, |ui| {
                 egui::ScrollArea::vertical()
                     .max_height(420.0)
                     .auto_shrink([false, false])

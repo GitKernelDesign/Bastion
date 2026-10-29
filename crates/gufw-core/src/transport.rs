@@ -31,24 +31,41 @@ pub trait Transport: Send + Sync {
     fn describe(&self) -> String;
 }
 
-/// Exécute une spec et exige un code de retour nul.
-/// Retourne la sortie standard brute.
+/// Exécute une spec et exige un code nul. En cas d'échec, le message système
+/// est complété d'une piste actionnable quand la cause est identifiable.
 pub async fn exec_checked(t: &dyn Transport, spec: &CommandSpec) -> Result<String, CoreError> {
     ensure_whitelisted(spec)?;
     let out = t.exec(spec).await?;
     if out.success() {
-        Ok(out.stdout)
-    } else {
-        let mut stderr = out.stderr.trim().to_string();
-        if stderr.is_empty() {
-            stderr = out.stdout.trim().to_string();
-        }
-        Err(CoreError::CommandFailed {
-            program: spec.program.name().to_string(),
-            code: out.code,
-            stderr,
-        })
+        return Ok(out.stdout);
     }
+    let mut stderr = out.stderr.trim().to_string();
+    if stderr.is_empty() {
+        stderr = out.stdout.trim().to_string();
+    }
+    // Indices ergonomiques : les causes les plus fréquentes reçoivent une
+    // explication en clair, la commande exacte restant dans le Journal.
+    if stderr.contains("You need to be root") {
+        stderr.push_str(
+            "\n→ La cible exige les droits root : en SSH, activez « Exécuter via sudo » (avec le mot de passe sudo si nécessaire) ou connectez-vous en root.",
+        );
+    } else if stderr.contains("a password is required")
+        || stderr.contains("sudo: no tty")
+        || stderr.contains("no password was provided")
+    {
+        stderr.push_str(
+            "\n→ Le sudo distant exige un mot de passe : renseignez « Mot de passe sudo » sur l'écran de connexion.",
+        );
+    } else if stderr.contains("could not be found") || stderr.contains("command not found") {
+        stderr.push_str(
+            "\n→ L'outil semble absent de la cible : vérifiez qu'ufw/fail2ban y sont installés.",
+        );
+    }
+    Err(CoreError::CommandFailed {
+        program: spec.program.name().to_string(),
+        code: out.code,
+        stderr,
+    })
 }
 
 /// Comme [`exec_checked`] mais tolère un code non nul (sorties d'information).

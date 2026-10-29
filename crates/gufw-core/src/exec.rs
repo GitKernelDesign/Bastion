@@ -174,7 +174,7 @@ fn validate_ufw(args: &[String]) -> Result<(), String> {
             _ => Err("sous-commande ufw app non autorisée".into()),
         },
         "show" => match args.get(1).map(|s| s.as_str()) {
-            Some("report") | Some("raw") => Ok(()),
+            Some("listening") | Some("report") | Some("raw") => Ok(()),
             _ => Err("sous-commande ufw show non autorisée".into()),
         },
         "--force" => {
@@ -201,7 +201,12 @@ fn validate_ufw(args: &[String]) -> Result<(), String> {
     }
 }
 
-/// Valide la partie « règle » : action, direction, mots-clés et valeurs.
+/// Valide la partie « règle » : action [in|out] puis soit un positionnel
+/// (port/service/profil, éventuellement suivi de « comment X »), soit des
+/// clauses from/to/port/proto/comment.
+/// Formes vérifiées empiriquement contre ufw 0.36 :
+///  allow 22/tcp · allow out 8080 · allow in from A to B port P proto T
+///  allow from A to any port P proto tcp comment 'x' · insert N allow …
 fn validate_rule_args(args: &[String]) -> Result<(), String> {
     let mut i = 0;
     let action = args.first().map(|s| s.as_str()).unwrap_or_default();
@@ -215,10 +220,26 @@ fn validate_rule_args(args: &[String]) -> Result<(), String> {
             i += 1;
         }
     }
-    // soit un profil d'application (dernier argument), soit des clauses.
-    if args.len() == i + 1 {
-        return Ok(()); // ex. « allow 22/tcp », « allow Apache Full »… attends : "Apache Full" est en UN argument côté argv
+
+    // Forme 1 : positionnel (port / service / profil d'application).
+    if let Some(first) = args.get(i) {
+        if !matches!(first.as_str(), "from" | "to" | "port" | "proto" | "comment") {
+            i += 1;
+            // Commentaire optionnel en clôture.
+            if args.get(i).map(|s| s.as_str()) == Some("comment") {
+                if args.len() != i + 2 {
+                    return Err("« comment » attend exactement une valeur".into());
+                }
+                i += 2;
+            }
+            if i != args.len() {
+                return Err("arguments superflus après la règle".into());
+            }
+            return Ok(());
+        }
     }
+
+    // Forme 2 : clauses nommées.
     while i < args.len() {
         match args[i].as_str() {
             "from" | "to" | "port" | "proto" | "comment" => {

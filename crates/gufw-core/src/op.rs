@@ -235,8 +235,9 @@ mod tests {
 
     #[tokio::test]
     async fn op_ufw_add_rule_envoie_les_bons_arguments() {
+        // NewRule de test : Proto::Any → forme simple « allow 8080 ».
         let t = t_with(
-            CommandSpec::new(crate::exec::Program::Ufw, &["allow", "in", "port", "8080"]),
+            CommandSpec::new(crate::exec::Program::Ufw, &["allow", "8080"]),
             ok_out("Rule added\n"),
         );
         let rule = NewRule {

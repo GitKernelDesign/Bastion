@@ -87,10 +87,8 @@ fn service_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
             } else {
                 if components::primary_button(ui, p, "Démarrer").clicked() {
                     app.send_op(
-                        Pending::Service(ServiceAction::ReloadOrRestart),
-                        Op::F2bServiceAction {
-                            action: ServiceAction::ReloadOrRestart,
-                        },
+                        Pending::Service(ServiceAction::Start),
+                        Op::F2bServiceAction { action: ServiceAction::Start },
                     );
                 }
             }

@@ -166,21 +166,8 @@ pub async fn jail_status(t: &dyn Transport, jail: &str) -> Result<JailInfo, Core
     .await?;
     let mut info = parse_jail_status(jail, &raw);
 
-    // Liste des IP via la commande dédiée (plus fiable que le texte status),
-    // avec repli sur l'analyse du status si la commande est absente.
-    if let Ok(out) = exec_lax(
-        t,
-        &CommandSpec::new(Program::Fail2banClient, &["get", jail, "bannedips"]),
-    )
-    .await
-    {
-        if out.success() {
-            let ips = parse_bannedips(&out.stdout);
-            if !ips.is_empty() {
-                info.banned_ips = ips;
-            }
-        }
-    }
+    // NB : « get <jail> bannedips » n'existe pas en fail2ban 1.x
+    // (« Invalid command ») — la liste des IP vient de l'analyse du status.
 
     // Paramètres : tolère l'absence individuelle.
     for (param, slot) in [
@@ -240,30 +227,67 @@ pub async fn banned_all(t: &dyn Transport) -> Result<Vec<(String, Vec<String>)>,
     Ok(parse_banned_all(&out.stdout))
 }
 
-/// Sortie de `fail2ban-client banned` :
-/// « Jail name: sshd\n Banned IPs: 1.2.3.4 5.6.7.8 »
+/// Sortie réelle de `fail2ban-client banned` (fail2ban 1.x) : représentation
+/// Python du dict, p. ex. `[{'sshd': ['1.2.3.4']}, {'nginx': []}]`.
+/// (Les anciennes versions imprimaient « Jail name: … / Banned IPs: … » —
+/// les deux formats sont acceptés.)
 pub fn parse_banned_all(raw: &str) -> Vec<(String, Vec<String>)> {
     let mut result = Vec::new();
-    let mut current: Option<(String, Vec<String>)> = None;
-    for line in raw.lines() {
-        let line = line.trim();
-        if let Some(jail) = line.strip_prefix("Jail name:") {
-            if let Some(c) = current.take() {
-                result.push(c);
-            }
-            current = Some((jail.trim().to_string(), Vec::new()));
-        } else if let Some(ips) = line.strip_prefix("Banned IPs:") {
-            if let Some((_, list)) = current.as_mut() {
-                *list = ips
-                    .split_whitespace()
-                    .map(str::to_string)
-                    .filter(|s| !s.is_empty())
-                    .collect();
+    let text = raw;
+
+    // Format 1.x : paires 'jail': [ips] dans une représentation Python.
+    let mut i = 0;
+    let bytes = text.as_bytes();
+    while i < bytes.len() {
+        // cherche une apostrophe ouvrante suivie du nom puis « ' » puis « : » puis « [ »
+        if bytes[i] == b'\'' {
+            if let Some(close) = text[i + 1..].find('\'') {
+                let name = &text[i + 1..i + 1 + close];
+                let after = &text[i + 1 + close..];
+                if after.starts_with('\'') && after[1..].trim_start().starts_with(':') {
+                    // cherche le crochet de liste
+                    if let Some(bracket) = after[1..].find('[') {
+                        let list_start = i + 1 + close + 1 + bracket + 1;
+                        if let Some(list_end) = text[list_start..].find(']') {
+                            let ips_raw = &text[list_start..list_start + list_end];
+                            let ips: Vec<String> = ips_raw
+                                .split(',')
+                                .map(|s| s.trim().trim_matches('\'').trim_matches('"').to_string())
+                                .filter(|s| !s.is_empty())
+                                .collect();
+                            result.push((name.to_string(), ips));
+                            i = list_start + list_end;
+                        }
+                    }
+                }
             }
         }
+        i += 1;
     }
-    if let Some(c) = current.take() {
-        result.push(c);
+
+    if result.is_empty() {
+        // Format historique : « Jail name: … / Banned IPs: … ».
+        let mut current: Option<(String, Vec<String>)> = None;
+        for line in text.lines() {
+            let line = line.trim();
+            if let Some(jail) = line.strip_prefix("Jail name:") {
+                if let Some(c) = current.take() {
+                    result.push(c);
+                }
+                current = Some((jail.trim().to_string(), Vec::new()));
+            } else if let Some(ips) = line.strip_prefix("Banned IPs:") {
+                if let Some((_, list)) = current.as_mut() {
+                    *list = ips
+                        .split_whitespace()
+                        .map(str::to_string)
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                }
+            }
+        }
+        if let Some(c) = current.take() {
+            result.push(c);
+        }
     }
     result
 }

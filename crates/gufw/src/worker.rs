@@ -85,12 +85,46 @@ struct LoggingTransport {
     tx: std::sync::mpsc::Sender<Event>,
 }
 
+/// Persiste chaque commande exécutée dans ~/.config/gufw/journal.log
+/// (rotation à ~2 Mo) : le journal reste consultable après fermeture,
+/// ce qui rend les erreurs diagnostiquables a posteriori.
+fn journal_persist(entry: &LogEntry) {
+    use std::io::Write;
+    static PATH: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+    let path = PATH.get_or_init(|| {
+        let dir = crate::config::AppConfig::config_dir();
+        std::fs::create_dir_all(&dir).ok()?;
+        Some(dir.join("journal.log"))
+    });
+    let Some(path) = path else { return };
+    // Rotation simple.
+    if let Ok(meta) = std::fs::metadata(path) {
+        if meta.len() > 2 * 1024 * 1024 {
+            let _ = std::fs::rename(path, path.with_extension("log.1"));
+        }
+    }
+    let ts = entry
+        .at
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let line = format!(
+        "{}\t{}\tcode={}\t{}\t{}\n",
+        ts,
+        if entry.ok { "OK" } else { "ERR" },
+        entry.code,
+        entry.command,
+        entry.detail.replace(['\n', '\t'], " "),
+    );
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = f.write_all(line.as_bytes());
+    }
+}
+
 #[async_trait]
 impl Transport for LoggingTransport {
     async fn exec(&self, spec: &gufw_core::exec::CommandSpec) -> Result<ExecOutput, CoreError> {
-        let start = Instant::now();
         let res = self.inner.exec(spec).await;
-        let elapsed = start.elapsed();
         let entry = match &res {
             Ok(o) => LogEntry {
                 at: SystemTime::now(),
@@ -107,8 +141,8 @@ impl Transport for LoggingTransport {
                 detail: tail(&e.to_string(), 300),
             },
         };
+        journal_persist(&entry);
         let _ = self.tx.send(Event::Log(entry));
-        let _ = elapsed;
         res
     }
 
