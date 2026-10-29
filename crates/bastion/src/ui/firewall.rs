@@ -287,60 +287,67 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
             }
         },
         |ui| {
-            // Ajout rapide : port ou service + options UFW (protocole,
-            // direction, action). La rangée défile si la fenêtre est étroite.
-            egui::ScrollArea::horizontal()
-                .id_salt("quick-add")
-                .auto_shrink([false, true])
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing = egui::vec2(10.0, 8.0);
-                        let resp = ui.add(
-                            egui::TextEdit::singleline(&mut app.firewall.quick_port)
-                                .hint_text(t.hint_port)
-                                .desired_width(230.0)
-                                .font(egui::TextStyle::Monospace),
-                        );
-                        if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                            quick_add = true;
-                        }
-                        let mut proto = app.firewall.quick_proto;
-                        components::segmented(
-                            ui,
-                            p,
-                            &[(Proto::Tcp, t.proto_tcp), (Proto::Udp, t.proto_udp), (Proto::Any, t.proto_any)],
-                            &mut proto,
-                        );
-                        app.firewall.quick_proto = proto;
-                        let mut dir = app.firewall.quick_dir;
-                        components::segmented(
-                            ui,
-                            p,
-                            &[(NewRuleDir::In, t.dir_inbound), (NewRuleDir::Out, t.dir_outbound)],
-                            &mut dir,
-                        );
-                        app.firewall.quick_dir = dir;
-                        let mut action = app.firewall.quick_action;
-                        components::segmented(
-                            ui,
-                            p,
-                            &[
-                                (RuleAction::Allow, t.action_allow),
-                                (RuleAction::Deny, t.action_deny),
-                                (RuleAction::Reject, t.action_reject),
-                                (RuleAction::Limit, t.action_limit),
-                            ],
-                            &mut action,
-                        );
-                        app.firewall.quick_action = action;
-                        if components::primary_button_small(ui, p, crate::icons::ADD, t.btn_add)
-                            .on_hover_text(t.hint_port)
-                            .clicked()
-                        {
-                            quick_add = true;
-                        }
-                    });
-                });
+            // Ajout rapide : port ou service, puis les options UFW empilées
+            // verticalement (protocole, direction, action) — jamais trop large.
+            ui.horizontal(|ui| {
+                let resp = ui.add(
+                    egui::TextEdit::singleline(&mut app.firewall.quick_port)
+                        .hint_text(t.hint_port)
+                        .desired_width((ui.available_width() - 130.0).max(160.0))
+                        .font(egui::TextStyle::Monospace),
+                );
+                if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    quick_add = true;
+                }
+                if components::primary_button_small(ui, p, crate::icons::ADD, t.btn_add)
+                    .on_hover_text(t.hint_port)
+                    .clicked()
+                {
+                    quick_add = true;
+                }
+            });
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(10.0, 8.0);
+                ui.label(RichText::new(t.proto_label).size(12.0).color(p.text_secondary));
+                let mut proto = app.firewall.quick_proto;
+                components::segmented(
+                    ui,
+                    p,
+                    &[(Proto::Tcp, t.proto_tcp), (Proto::Udp, t.proto_udp), (Proto::Any, t.proto_any)],
+                    &mut proto,
+                );
+                app.firewall.quick_proto = proto;
+            });
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(10.0, 8.0);
+                ui.label(RichText::new(t.dir_label).size(12.0).color(p.text_secondary));
+                let mut dir = app.firewall.quick_dir;
+                components::segmented(
+                    ui,
+                    p,
+                    &[(NewRuleDir::In, t.dir_inbound), (NewRuleDir::Out, t.dir_outbound)],
+                    &mut dir,
+                );
+                app.firewall.quick_dir = dir;
+            });
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(10.0, 8.0);
+                ui.label(RichText::new(t.action_label).size(12.0).color(p.text_secondary));
+                let mut action = app.firewall.quick_action;
+                components::segmented(
+                    ui,
+                    p,
+                    &[
+                        (RuleAction::Allow, t.action_allow),
+                        (RuleAction::Deny, t.action_deny),
+                        (RuleAction::Reject, t.action_reject),
+                        (RuleAction::Limit, t.action_limit),
+                    ],
+                    &mut action,
+                );
+                app.firewall.quick_action = action;
+            });
             ui.add_space(8.0);
             ui.horizontal(|ui| {
                 ui.label(crate::icons::icon(crate::icons::SEARCH));
@@ -379,9 +386,9 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 .cloned()
                 .collect();
 
-            // Hauteur : au moins 6 règles visibles, et jusqu'à ~14 selon
-            // le nombre de règles filtrées.
-            let list_h = (30.0 + 30.0 * rules.len() as f32).clamp(210.0, 450.0);
+            // Hauteur doublée : au moins 12 règles visibles, jusqu'à ~30
+            // selon le nombre de règles filtrées.
+            let list_h = (30.0 + 30.0 * rules.len() as f32).clamp(420.0, 900.0);
             egui::ScrollArea::vertical()
                 .max_height(list_h)
                 .auto_shrink([false, false])
