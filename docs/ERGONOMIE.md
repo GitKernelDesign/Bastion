@@ -1,4 +1,4 @@
-# GUFW — Étude ergonomique de l'interface
+# Bastion — Étude ergonomique de l'interface
 
 > Interface graphique simple, sobre, élégante et conviviale pour gérer intégralement
 > **UFW** et **Fail2Ban**, en local ou à distance via SSH.
@@ -139,7 +139,7 @@
 ```
 ┌──────────┬──────────────────────────────────────────────────────────┐
 │          │  ● Connecté — Local (root)            ⟳ auto   ⟳   ⚙      │  barre sup.
-│  GUFW    ├──────────────────────────────────────────────────────────┤
+│  Bastion ├──────────────────────────────────────────────────────────┤
 │          │                                                          │
 │ Connexion│   [ cartes d'état — visibles à chaque écran du domaine ]  │
 │          │                                                          │

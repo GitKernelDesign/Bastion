@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/gufw-core", "crates/gufw"]
+members = ["crates/bastion-core", "crates/bastion"]
 
 [workspace.package]
 version = "0.1.0"

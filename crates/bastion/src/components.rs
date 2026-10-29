@@ -286,15 +286,9 @@ pub fn loading(ui: &mut Ui, p: &Palette, label: &str) {
     });
 }
 
-/// Affiche « il y a Ns » depuis un Instant.
-pub fn since_label(ui: &mut Ui, p: &Palette, at: std::time::Instant) {
-    let secs = at.elapsed().as_secs();
-    let txt = match secs {
-        0 => "à l'instant".to_string(),
-        s if s < 60 => format!("il y a {s} s"),
-        m if m < 3600 => format!("il y a {} min", m / 60),
-        h => format!("il y a {} h", h / 3600),
-    };
+/// Affiche l'ancienneté des données (traduit).
+pub fn since_label(ui: &mut Ui, p: &Palette, t: &crate::i18n::Tr, at: std::time::Instant) {
+    let txt = t.since(at.elapsed().as_secs());
     ui.label(RichText::new(txt).size(11.5).color(p.text_secondary));
 }
 

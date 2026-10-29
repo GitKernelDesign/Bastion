@@ -1,4 +1,4 @@
-//! GUFW — interface graphique de gestion UFW & Fail2Ban (local et SSH).
+//! Bastion — interface graphique de gestion UFW & Fail2Ban (local et SSH).
 //!
 //! Le même binaire sert de :
 //!  - application graphique (défaut) ;
@@ -8,6 +8,7 @@
 mod app;
 mod components;
 mod config;
+mod i18n;
 mod fonts;
 mod icons;
 mod modal;
@@ -24,7 +25,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     if args.iter().any(|a| a == "--version" || a == "-V") {
-        println!("GUFW v{}", env!("CARGO_PKG_VERSION"));
+        println!("Bastion v{}", env!("CARGO_PKG_VERSION"));
         return;
     }
 
@@ -36,7 +37,7 @@ fn main() {
     launch_gui();
 }
 
-/// Journalise toute panique dans ~/.config/gufw/panic.log : une panique dans
+/// Journalise toute panique dans ~/.config/bastion/panic.log : une panique dans
 /// une tâche asynchrone est silencieuse sinon (tokio l'attrape), et l'app
 /// paraît simplement « ne rien faire ».
 fn install_panic_hook() {
@@ -76,21 +77,21 @@ fn serve(args: &[String]) {
         .or_else(|| std::env::var("PKEXEC_UID").ok())
         .and_then(|s| s.parse().ok())
         .unwrap_or_else(|| {
-            eprintln!("gufw --serve : --uid manquant");
+            eprintln!("bastion --serve : --uid manquant");
             std::process::exit(2);
         });
 
     let socket = get("--socket")
         .map(PathBuf::from)
-        .unwrap_or_else(|| gufw_core::helper::socket_path_for(uid));
+        .unwrap_or_else(|| bastion_core::helper::socket_path_for(uid));
 
     let timeout = get("--idle")
         .and_then(|s| s.parse::<u64>().ok())
         .map(Duration::from_secs)
         .unwrap_or(Duration::from_secs(600));
 
-    if let Err(e) = gufw_core::helper::run_helper_server(&socket, uid, timeout) {
-        eprintln!("gufw --serve : {e}");
+    if let Err(e) = bastion_core::helper::run_helper_server(&socket, uid, timeout) {
+        eprintln!("bastion --serve : {e}");
         std::process::exit(1);
     }
 }
@@ -102,9 +103,11 @@ fn launch_gui() {
         height: 64,
     };
 
+    let cfg = config::AppConfig::load();
+    let title = i18n::tr(cfg.language).window_title.to_string();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("GUFW — Pare-feu & Fail2Ban")
+            .with_title(title)
             .with_inner_size([1280.0, 820.0])
             .with_min_inner_size([1000.0, 640.0])
             .with_icon(std::sync::Arc::new(icon)),
@@ -112,7 +115,7 @@ fn launch_gui() {
     };
 
     if let Err(e) = eframe::run_native(
-        "GUFW",
+        "Bastion",
         options,
         Box::new(|cc| {
             Ok(Box::new(app::GuiApp::new(cc)))

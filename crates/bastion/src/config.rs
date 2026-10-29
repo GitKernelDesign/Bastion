@@ -1,6 +1,7 @@
 //! Configuration persistante de l'application (thème, réglages, profils SSH,
 //! empreintes connues). Aucun mot de passe n'est jamais persisté ici.
 
+use crate::i18n::Lang;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -38,6 +39,7 @@ pub struct KnownHost {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
+    pub language: Lang,
     pub theme: ThemeKind,
     pub font_scale: f32,
     pub auto_refresh: bool,
@@ -51,6 +53,7 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         AppConfig {
+            language: Lang::detect(),
             theme: ThemeKind::Dark,
             font_scale: 1.0,
             auto_refresh: true,
@@ -72,7 +75,7 @@ impl AppConfig {
                     .map(|h| PathBuf::from(h).join(".config"))
             })
             .unwrap_or_else(|| PathBuf::from(".config"));
-        base.join("gufw")
+        base.join("bastion")
     }
 
     pub fn config_path() -> PathBuf {
@@ -80,9 +83,36 @@ impl AppConfig {
     }
 
     pub fn load() -> AppConfig {
+        Self::migrate_from_gufw();
         match std::fs::read_to_string(Self::config_path()) {
             Ok(raw) => serde_json::from_str(&raw).unwrap_or_default(),
             Err(_) => AppConfig::default(),
+        }
+    }
+
+    /// Migre l'ancienne configuration « gufw » (avant renommage) si présente :
+    /// profils SSH, empreintes connues et réglages sont conservés.
+    fn migrate_from_gufw() {
+        let new_dir = Self::config_dir();
+        if new_dir.join("config.json").exists() {
+            return;
+        }
+        let Some(old_dir) = std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
+            .map(|d| d.join("gufw"))
+        else {
+            return;
+        };
+        if old_dir.exists() {
+            let _ = std::fs::create_dir_all(&new_dir);
+            for file in ["config.json", "journal.log", "panic.log"] {
+                let src = old_dir.join(file);
+                let dst = new_dir.join(file);
+                if src.exists() && !dst.exists() {
+                    let _ = std::fs::copy(&src, &dst);
+                }
+            }
         }
     }
 

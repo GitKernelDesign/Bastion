@@ -1,6 +1,6 @@
 [package]
-name = "gufw-core"
-description = "Cœur applicatif GUFW : modèles, parseurs UFW/Fail2Ban et transports (local, helper pkexec, SSH)"
+name = "bastion-core"
+description = "Cœur applicatif Bastion : modèles, parseurs UFW/Fail2Ban et transports (local, helper pkexec, SSH)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -3,16 +3,16 @@
 //! événements. Chaque commande exécutée est journalisée (transparence totale).
 
 use async_trait::async_trait;
-use gufw_core::op::{run_op, Op, OpResult};
-use gufw_core::local::LocalRoot;
-use gufw_core::ssh::{ConnectOutcome, SshParams, SshTransport};
-use gufw_core::{
+use bastion_core::op::{run_op, Op, OpResult};
+use bastion_core::local::LocalRoot;
+use bastion_core::ssh::{ConnectOutcome, SshParams, SshTransport};
+use bastion_core::{
     CoreError, ExecOutput, Transport,
     helper::{HelperTransport, socket_path_for, spawn_and_connect},
 };
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
 
 /// Travail demandé par l'interface.
 pub enum Job {
@@ -40,8 +40,8 @@ pub struct LogEntry {
 pub enum Event {
     Connected { desc: String },
     ConnectFailed { reason: String },
-    HostKeyUnknown { host: String, fingerprint: String },
-    HostKeyChanged { host: String, old: String, new: String },
+    HostKeyUnknown { fingerprint: String },
+    HostKeyChanged { old: String, new: String },
     Disconnected { reason: String },
     OpDone { id: u64, result: Result<OpResult, CoreError> },
     Log(LogEntry),
@@ -59,7 +59,7 @@ impl WorkerHandle {
         let (tx_jobs, rx_jobs) = std::sync::mpsc::channel::<Job>();
         let (tx_ev, rx_ev) = std::sync::mpsc::channel::<Event>();
         std::thread::Builder::new()
-            .name("gufw-worker".into())
+            .name("bastion-worker".into())
             .spawn(move || worker_main(rx_jobs, tx_ev))
             .expect("thread worker");
         WorkerHandle { tx: tx_jobs, rx: rx_ev }
@@ -85,7 +85,7 @@ struct LoggingTransport {
     tx: std::sync::mpsc::Sender<Event>,
 }
 
-/// Persiste chaque commande exécutée dans ~/.config/gufw/journal.log
+/// Persiste chaque commande exécutée dans ~/.config/bastion/journal.log
 /// (rotation à ~2 Mo) : le journal reste consultable après fermeture,
 /// ce qui rend les erreurs diagnostiquables a posteriori.
 fn journal_persist(entry: &LogEntry) {
@@ -123,7 +123,7 @@ fn journal_persist(entry: &LogEntry) {
 
 #[async_trait]
 impl Transport for LoggingTransport {
-    async fn exec(&self, spec: &gufw_core::exec::CommandSpec) -> Result<ExecOutput, CoreError> {
+    async fn exec(&self, spec: &bastion_core::exec::CommandSpec) -> Result<ExecOutput, CoreError> {
         let res = self.inner.exec(spec).await;
         let entry = match &res {
             Ok(o) => LogEntry {
@@ -206,13 +206,10 @@ async fn handle_job(transport: SharedTransport, tx: std::sync::mpsc::Sender<Even
                     .await;
                 }
                 Ok(ConnectOutcome::HostKeyUnknown { fingerprint }) => {
-                    let _ = tx.send(Event::HostKeyUnknown {
-                        host,
-                        fingerprint,
-                    });
+                    let _ = tx.send(Event::HostKeyUnknown { fingerprint });
                 }
                 Ok(ConnectOutcome::HostKeyChanged { old, new }) => {
-                    let _ = tx.send(Event::HostKeyChanged { host, old, new });
+                    let _ = tx.send(Event::HostKeyChanged { old, new });
                 }
                 Err(e) => {
                     let _ = tx.send(Event::ConnectFailed {
@@ -352,10 +349,10 @@ mod tests {
     }
 
     fn skip_if_no_binary() -> Option<PathBuf> {
-        match std::env::var("CARGO_BIN_EXE_gufw") {
+        match std::env::var("CARGO_BIN_EXE_bastion") {
             Ok(exe) => Some(PathBuf::from(exe)),
             Err(_) => {
-                eprintln!("CARGO_BIN_EXE_gufw absent : test ignoré");
+                eprintln!("CARGO_BIN_EXE_bastion absent : test ignoré");
                 None
             }
         }
@@ -397,7 +394,7 @@ mod tests {
         let Some(exe) = skip_if_no_binary() else { return };
 
         // Démarre le helper manuellement (rôle joué par pkexec en réel).
-        let socket = std::env::temp_dir().join(format!("gufw-wt-{}.sock", std::process::id()));
+        let socket = std::env::temp_dir().join(format!("bastion-wt-{}.sock", std::process::id()));
         let _ = std::fs::remove_file(&socket);
         let mut helper = std::process::Command::new(&exe)
             .arg("--serve")
@@ -424,7 +421,7 @@ mod tests {
         // visible (propagation du stderr système).
         h.send(Job::Op {
             id: 42,
-            op: gufw_core::op::Op::UfwStatus,
+            op: bastion_core::op::Op::UfwStatus,
         });
         match recv_with_timeout(&h, 15) {
             Some(Event::OpDone { id, result }) => {

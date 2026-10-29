@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Génère l'icône GUFW : bouclier sobre sur fond arrondi sombre.
+"""Génère l'icône Bastion : bouclier sobre sur fond arrondi sombre.
 
 Produit :
   assets/icon.png      (512×512, PNG)

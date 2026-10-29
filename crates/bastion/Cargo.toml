@@ -1,12 +1,12 @@
 [package]
-name = "gufw"
-description = "GUFW — interface graphique de gestion UFW & Fail2Ban"
+name = "bastion"
+description = "Bastion — interface graphique de gestion UFW & Fail2Ban (local et SSH)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-gufw-core = { path = "../gufw-core" }
+bastion-core = { path = "../bastion-core" }
 eframe = { workspace = true }
 egui = { workspace = true }
 tokio = { workspace = true }
@@ -15,5 +15,5 @@ serde_json = { workspace = true }
 async-trait = { workspace = true }
 
 [[bin]]
-name = "gufw"
+name = "bastion"
 path = "src/main.rs"

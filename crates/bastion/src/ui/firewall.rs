@@ -1,65 +1,56 @@
 //! Écran Pare-feu : état, politiques par défaut, journalisation, règles.
 
-use crate::app::{ConnPhase, ConfirmData, ConfirmKind, GuiApp, Modal, Pending};
+use crate::app::{ConfirmData, ConfirmKind, GuiApp, Modal, Pending};
 use crate::components;
 use crate::theme::Palette;
+use bastion_core::model::*;
+use bastion_core::op::Op;
 use egui::{Align, Layout, RichText};
-use gufw_core::model::*;
-use gufw_core::op::Op;
 
 pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
-    components::screen_header(
-        ui,
-        p,
-        "Pare-feu",
-        "État du pare-feu UFW, politiques par défaut et règles en vigueur.",
-    );
+    let t = app.tr;
+    components::screen_header(ui, p, t.nav_firewall, t.fw_subtitle);
     ui.add_space(6.0);
 
-    if app.phase != ConnPhase::Connected {
-        components::empty_state(
-            ui,
-            p,
-            "Non connecté",
-            "Connectez-vous d'abord depuis l'écran Connexion (Ctrl+1).",
-        );
+    if app.phase != crate::app::ConnPhase::Connected {
+        components::empty_state(ui, p, t.status_disconnected, t.need_connection_hint);
         return;
     }
 
-    // ---- rangée de cartes d'état
+    // Cartes d'état.
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing = egui::vec2(12.0, 12.0);
         status_card(app, ui, p);
         policy_card(app, ui, p);
         logging_card(app, ui, p);
     });
-
     ui.add_space(12.0);
-
-    // ---- règles
     rules_card(app, ui, p);
-
     ui.add_space(12.0);
 
-    // ---- actions rares (en bas, vers le regard expert)
-    ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
-        let busy = app.pending.values().any(|x| matches!(x, Pending::Report));
+    // Actions rares, en bas.
+    ui.horizontal(|ui| {
+        let busy_report = app.pending.values().any(|x| matches!(x, Pending::Report));
         if ui
-            .add_enabled(!busy, egui::Button::new(components::btn_icon_text(crate::icons::TERMINAL, "Rapport UFW")))
+            .add_enabled(
+                !busy_report,
+                egui::Button::new(components::btn_icon_text(crate::icons::TERMINAL, t.report_btn)),
+            )
             .clicked()
         {
             app.send_op(Pending::Report, Op::UfwReport);
         }
-        if components::danger_button(ui, p, "Réinitialiser…").clicked() {
-            app.modal = Some(Modal::ResetFw {
-                typed: String::new(),
-            });
+        if components::danger_button(ui, p, t.reset_btn).clicked() {
+            app.modal = Some(Modal::ResetFw { typed: String::new() });
         }
         ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-            let busy = app.pending.values().any(|x| matches!(x, Pending::Reload));
+            let busy_reload = app.pending.values().any(|x| matches!(x, Pending::Reload));
             if ui
-                .add_enabled(!busy, egui::Button::new(components::btn_icon_text(crate::icons::RESTART, "Recharger")))
-                .on_hover_text("Recharge les règles (ufw reload)")
+                .add_enabled(
+                    !busy_reload,
+                    egui::Button::new(components::btn_icon_text(crate::icons::RESTART, t.reload_btn)),
+                )
+                .on_hover_text(t.reload_rules_tooltip)
                 .clicked()
             {
                 app.send_op(Pending::Reload, Op::UfwReload);
@@ -68,14 +59,13 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     });
 }
 
-/// Carte d'état : interrupteur principal + version.
+// ─── Carte état ──────────────────────────────────────────────────────────────
 fn status_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
+    let t = app.tr;
     components::card_body(ui, p, |ui| {
         ui.set_min_width(230.0);
-        let (active, version, raw) = match &app.firewall.status {
-            Some(s) => (s.active, probe_ufw_version(app), s.raw.clone()),
-            None => (false, String::new(), String::new()),
-        };
+        let active = app.firewall.status.as_ref().map(|s| s.active).unwrap_or(false);
+        let version = app.probe.0.clone().unwrap_or_default();
         let busy = app
             .pending
             .values()
@@ -85,7 +75,7 @@ fn status_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
             ui,
             p,
             if active { p.success } else { p.danger },
-            if active { "Actif" } else { "Désactivé" },
+            if active { t.fw_state_active } else { t.fw_state_inactive },
             None,
         );
         if !version.is_empty() {
@@ -93,16 +83,15 @@ fn status_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
         }
         ui.add_space(8.0);
         ui.horizontal(|ui| {
-            let on = components::switch(ui, p, active, if active { Some(p.success) } else { None });
+            let on = components::switch(ui, p, active, active.then_some(p.success));
             if on != active && !busy {
                 if on {
                     app.send_op(Pending::Enable, Op::UfwEnable);
                 } else {
-                    // Désactiver est une action destructrice : confirmation.
                     app.modal = Some(Modal::Confirm(ConfirmData {
-                        title: "Désactiver le pare-feu ?".into(),
-                        body: "Toutes les protections de la machine cible seront suspendues : les connexions entrantes ne seront plus filtrées. Cette action prend effet immédiatement.".into(),
-                        confirm_label: "Désactiver".into(),
+                        title: t.disable_fw_title.to_string(),
+                        body: t.disable_fw_body.to_string(),
+                        confirm_label: t.btn_disable.to_string(),
                         kind: ConfirmKind::DisableFw,
                     }));
                 }
@@ -111,10 +100,9 @@ fn status_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 ui.add(egui::Spinner::new().size(14.0));
             }
         });
-        let _ = raw;
         ui.add_space(2.0);
         if ui
-            .add(egui::Button::new(RichText::new("Sortie brute").size(11.5)))
+            .add(egui::Button::new(RichText::new(t.show_raw_toggle).size(11.5)))
             .clicked()
         {
             app.firewall.show_raw = !app.firewall.show_raw;
@@ -124,103 +112,79 @@ fn status_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 egui::ScrollArea::vertical()
                     .id_salt("ufw-raw")
                     .max_height(140.0)
-                    .show(ui, |ui| {
-                        ui.monospace(&s.raw);
-                    });
+                    .show(ui, |ui| ui.monospace(&s.raw));
             }
         }
     });
 }
 
-fn probe_ufw_version(app: &GuiApp) -> String {
-    app.probe.0.clone().unwrap_or_default()
-}
-
-/// Carte politiques par défaut.
+// ─── Carte politiques ────────────────────────────────────────────────────────
 fn policy_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
+    let t = app.tr;
     components::card_body(ui, p, |ui| {
         ui.set_min_width(250.0);
         ui.label(
-            RichText::new("POLITIQUES PAR DÉFAUT")
-                .size(11.5)
-                .weak()
-                .family(egui::FontFamily::Name("Medium".into())),
-        );
-        ui.add_space(6.0);
-        let st = app.firewall.status.clone();
-        let Some(st) = st else {
-            components::hint(ui, p, "État inconnu (actualisez).");
-            return;
-        };
-
-        for dir in [Direction::Incoming, Direction::Outgoing, Direction::Routed] {
-            ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new(match dir {
-                        Direction::Incoming => "Entrée",
-                        Direction::Outgoing => "Sortie",
-                        Direction::Routed => "Routage",
-                    })
-                    .size(12.5)
-                    .color(p.text_secondary),
-                );
-                let current = match dir {
-                    Direction::Incoming => st.defaults.incoming.unwrap_or(Policy::Deny),
-                    Direction::Outgoing => st.defaults.outgoing.unwrap_or(Policy::Allow),
-                    Direction::Routed => {
-                        if st.defaults.routed_disabled {
-                            Policy::Deny
-                        } else {
-                            st.defaults.routed.unwrap_or(Policy::Deny)
-                        }
-                    }
-                };
-                let mut sel = current;
-                egui::ComboBox::from_id_salt(format!("policy-{:?}", dir))
-                    .selected_text(current.libelle())
-                    .width(110.0)
-                    .show_ui(ui, |ui| {
-                        for pol in [Policy::Allow, Policy::Deny, Policy::Reject] {
-                            ui.selectable_value(&mut sel, pol, pol.libelle());
-                        }
-                    });
-                if dir == Direction::Routed && st.defaults.routed_disabled {
-                    ui.label(
-                        RichText::new("(relais noyau désactivé)")
-                            .size(10.5)
-                            .color(p.warning),
-                    );
-                }
-                if sel != current {
-                    app.send_op(
-                        Pending::Policy(dir),
-                        Op::UfwSetDefault { dir, policy: sel },
-                    );
-                }
-            });
-        }
-        ui.add_space(2.0);
-        components::hint(
-            ui,
-            p,
-            "Rejeter = refuse avec notification à l'émetteur ; Refuser = silencieux.",
-        );
-    });
-}
-
-/// Carte journalisation.
-fn logging_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
-    components::card_body(ui, p, |ui| {
-        ui.set_min_width(230.0);
-        ui.label(
-            RichText::new("JOURNALISATION")
+            RichText::new(t.policies_title.to_uppercase())
                 .size(11.5)
                 .weak()
                 .family(egui::FontFamily::Name("Medium".into())),
         );
         ui.add_space(6.0);
         let Some(st) = app.firewall.status.clone() else {
-            components::hint(ui, p, "État inconnu.");
+            return;
+        };
+        for dir in [Direction::Incoming, Direction::Outgoing, Direction::Routed] {
+            ui.horizontal(|ui| {
+                let dir_label = match dir {
+                    Direction::Incoming => t.policy_incoming,
+                    Direction::Outgoing => t.policy_outgoing,
+                    Direction::Routed => t.policy_routed,
+                };
+                ui.label(RichText::new(dir_label).size(12.5).color(p.text_secondary));
+                let current = match dir {
+                    Direction::Incoming => st.defaults.incoming.unwrap_or(Policy::Deny),
+                    Direction::Outgoing => st.defaults.outgoing.unwrap_or(Policy::Allow),
+                    Direction::Routed => st.defaults.routed.unwrap_or(Policy::Deny),
+                };
+                let mut sel = current;
+                egui::ComboBox::from_id_salt(format!("policy-{dir:?}"))
+                    .selected_text(t.policy(current))
+                    .width(120.0)
+                    .show_ui(ui, |ui| {
+                        for pol in [Policy::Allow, Policy::Deny, Policy::Reject] {
+                            ui.selectable_value(&mut sel, pol, t.policy(pol));
+                        }
+                    });
+                if dir == Direction::Routed && st.defaults.routed_disabled {
+                    ui.label(
+                        RichText::new(t.routed_disabled_note)
+                            .size(10.5)
+                            .color(p.warning),
+                    );
+                }
+                if sel != current {
+                    app.send_op(Pending::Policy(dir), Op::UfwSetDefault { dir, policy: sel });
+                }
+            });
+        }
+        ui.add_space(2.0);
+        components::hint(ui, p, t.policy_hint);
+    });
+}
+
+// ─── Carte journalisation ────────────────────────────────────────────────────
+fn logging_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
+    let t = app.tr;
+    components::card_body(ui, p, |ui| {
+        ui.set_min_width(230.0);
+        ui.label(
+            RichText::new(t.logging_title.to_uppercase())
+                .size(11.5)
+                .weak()
+                .family(egui::FontFamily::Name("Medium".into())),
+        );
+        ui.add_space(6.0);
+        let Some(st) = app.firewall.status.clone() else {
             return;
         };
         let current = if st.logging_on {
@@ -230,74 +194,58 @@ fn logging_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
         };
         let mut sel = current;
         egui::ComboBox::from_id_salt("log-level")
-            .selected_text(current.libelle())
+            .selected_text(t.log_level(current))
             .width(150.0)
             .show_ui(ui, |ui| {
-                for lvl in [
-                    LogLevel::Off,
-                    LogLevel::Low,
-                    LogLevel::Medium,
-                    LogLevel::High,
-                    LogLevel::Full,
-                ] {
-                    ui.selectable_value(&mut sel, lvl, lvl.libelle());
+                for lvl in [LogLevel::Off, LogLevel::Low, LogLevel::Medium, LogLevel::High, LogLevel::Full] {
+                    ui.selectable_value(&mut sel, lvl, t.log_level(lvl));
                 }
             });
         if sel != current {
             app.send_op(Pending::Logging, Op::UfwSetLogging { level: sel });
         }
         ui.add_space(4.0);
-        components::hint(
-            ui,
-            p,
-            "Les blocages sont consultables dans l'écran Fail2Ban (« Journaux »).",
-        );
+        components::hint(ui, p, t.logging_hint);
     });
 }
 
-/// Carte règles : recherche, table, ajout, suppression.
+// ─── Carte règles ────────────────────────────────────────────────────────────
 fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
+    let t = app.tr;
     let n = app.firewall.rules.len();
     let mut refresh_clicked = false;
     let mut add_clicked = false;
+
     components::card(
         ui,
         p,
-        &format!("Règles ({n})"),
+        &t.rules_with_count(n),
         |ui| {
-            if components::icon_button(ui, p, crate::icons::REFRESH, "Actualiser les règles")
-                .clicked()
-            {
+            if components::icon_button(ui, p, crate::icons::REFRESH, t.refresh_rules_tooltip).clicked() {
                 refresh_clicked = true;
             }
-            if components::primary_button_small(ui, p, crate::icons::ADD, "Ajouter").clicked() {
+            if components::primary_button_small(ui, p, crate::icons::ADD, t.add_rule_btn).clicked() {
                 add_clicked = true;
             }
         },
         |ui| {
-            // Recherche
             ui.horizontal(|ui| {
-                ui.label(crate::icons::icon(crate::icons::SEARCH).size(14.0));
+                ui.label(crate::icons::icon(crate::icons::SEARCH));
                 ui.add(
                     egui::TextEdit::singleline(&mut app.firewall.search)
-                        .hint_text("Filtrer (port, adresse, commentaire…)")
+                        .hint_text(t.search_placeholder)
                         .desired_width(280.0),
                 );
-                if let Some(at) = app.firewall.rules_at {
-                    ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                        components::since_label(ui, p, at);
-                    });
-                }
+                ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
+                    if let Some(at) = app.firewall.rules_at {
+                        components::since_label(ui, p, t, at);
+                    }
+                });
             });
             ui.add_space(8.0);
 
             if n == 0 {
-                components::empty_state(
-                    ui,
-                    p,
-                    "Aucune règle",
-                    "Cliquez sur « Ajouter » pour autoriser un port ou une application.",
-                );
+                components::empty_state(ui, p, t.rules_empty, t.rules_empty_hint);
                 return;
             }
 
@@ -318,50 +266,49 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 .cloned()
                 .collect();
 
-            let n_cols = 7;
             egui::ScrollArea::vertical()
                 .max_height(320.0)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     egui::Grid::new("rules-table")
                         .striped(true)
-                        .num_columns(n_cols)
+                        .num_columns(7)
                         .min_col_width(10.0)
                         .spacing(egui::vec2(14.0, 8.0))
                         .show(ui, |ui| {
-                            ui.label(header_txt(p, "#"));
-                            ui.label(header_txt(p, "Action"));
-                            ui.label(header_txt(p, "De"));
-                            ui.label(header_txt(p, "Vers / Port"));
-                            ui.label(header_txt(p, "Sens"));
-                            ui.label(header_txt(p, "Commentaire"));
-                            ui.label(header_txt(p, ""));
+                            ui.label(header(p, "#"));
+                            ui.label(header(p, t.col_action));
+                            ui.label(header(p, t.col_from));
+                            ui.label(header(p, t.col_to_port));
+                            ui.label(header(p, t.col_dir));
+                            ui.label(header(p, t.col_comment));
+                            ui.label(header(p, ""));
                             ui.end_row();
 
                             for rule in &rules {
                                 ui.label(RichText::new(rule.number.to_string()).weak());
                                 let (color, label) = match rule.action {
-                                    RuleAction::Allow => (p.success, "Autoriser"),
-                                    RuleAction::Deny => (p.danger, "Bloquer"),
-                                    RuleAction::Reject => (p.warning, "Rejeter"),
-                                    RuleAction::Limit => (p.accent, "Limiter"),
+                                    RuleAction::Allow => (p.success, t.action_allow),
+                                    RuleAction::Deny => (p.danger, t.action_deny),
+                                    RuleAction::Reject => (p.warning, t.action_reject),
+                                    RuleAction::Limit => (p.accent, t.action_limit),
                                 };
                                 components::action_badge(ui, p, label, color);
                                 ui.label(RichText::new(&rule.from).monospace());
                                 ui.label(RichText::new(&rule.to).monospace());
-                                ui.label(
-                                    RichText::new(direction_txt(rule))
-                                        .size(12.0)
-                                        .color(p.text_secondary),
-                                );
+                                let mut dir_txt = t.rule_dir(rule.dir).to_string();
+                                if rule.ipv6 {
+                                    dir_txt.push_str(" · v6");
+                                }
+                                ui.label(RichText::new(dir_txt).size(12.0).color(p.text_secondary));
                                 match &rule.comment {
                                     Some(c) => ui.label(RichText::new(c).size(12.5)),
                                     None => ui.label(RichText::new("—").weak()),
                                 };
                                 let desc = format!(
-                                    "#{} — {} {} (de {})",
+                                    "#{} — {} {} ({})",
                                     rule.number,
-                                    rule.action.libelle(),
+                                    t.action(rule.action),
                                     rule.to,
                                     rule.from
                                 );
@@ -369,14 +316,14 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                                     ui,
                                     p,
                                     crate::icons::DELETE,
-                                    &format!("Supprimer la règle {desc}"),
+                                    &t.delete_rule_tooltip(&desc),
                                 )
                                 .clicked()
                                 {
                                     app.modal = Some(Modal::Confirm(ConfirmData {
-                                        title: "Supprimer la règle ?".into(),
+                                        title: t.delete_rule_title.to_string(),
                                         body: desc,
-                                        confirm_label: "Supprimer".into(),
+                                        confirm_label: t.btn_delete.to_string(),
                                         kind: ConfirmKind::DeleteRule { index: rule.number },
                                     }));
                                 }
@@ -385,18 +332,8 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                         });
                 });
             ui.add_space(2.0);
-            components::hint(
-                ui,
-                p,
-                "Les adresses et ports sont en police mono : comparables d'une ligne à l'autre. "
-                    .to_string()
-                    .as_str(),
-            );
-            ui.label(
-                RichText::new("Le badge « v6 » signale la déclinaison IPv6 d'une règle.")
-                    .size(12.5)
-                    .color(p.text_secondary),
-            );
+            components::hint(ui, p, t.mono_hint);
+            ui.label(RichText::new(t.v6_hint).size(12.5).color(p.text_secondary));
         },
     );
 
@@ -412,15 +349,7 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     }
 }
 
-fn direction_txt(rule: &Rule) -> String {
-    let mut s = rule.dir.libelle().to_string();
-    if rule.ipv6 {
-        s.push_str(" · v6");
-    }
-    s
-}
-
-fn header_txt(p: &Palette, s: &str) -> RichText {
+fn header(p: &Palette, s: &str) -> RichText {
     RichText::new(s)
         .size(11.5)
         .weak()

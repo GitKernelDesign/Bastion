@@ -1,4 +1,4 @@
-//! Écran Journal : toutes les commandes exécutées, horodatées, filtrables.
+//! Écran Journal : toutes les commandes exécutées, filtrables.
 
 use crate::app::{GuiApp, JOURNAL_CAP, LogFilter};
 use crate::components;
@@ -7,25 +7,19 @@ use egui::RichText;
 use std::time::SystemTime;
 
 pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
-    components::screen_header(
-        ui,
-        p,
-        "Journal",
-        "Chaque commande passée au système, avec son résultat. Rien ne s'exécute en silence.",
-    );
+    let t = app.tr;
+    components::screen_header(ui, p, t.nav_journal, t.journal_subtitle);
     ui.add_space(6.0);
 
     components::card_body(ui, p, |ui| {
-        // Filtres
         ui.horizontal(|ui| {
-            let current = app.filter;
             for (f, label) in [
-                (LogFilter::All, "Tout"),
-                (LogFilter::Errors, "Erreurs"),
-                (LogFilter::Ufw, "Pare-feu"),
-                (LogFilter::Fail2ban, "Fail2Ban"),
+                (LogFilter::All, t.filter_all),
+                (LogFilter::Errors, t.filter_errors),
+                (LogFilter::Fw, t.filter_fw),
+                (LogFilter::F2b, t.filter_f2b),
             ] {
-                let sel = current == f;
+                let sel = app.filter == f;
                 let btn = egui::Button::new(
                     RichText::new(label).size(12.5).color(if sel {
                         egui::Color32::WHITE
@@ -39,15 +33,12 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 }
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-                if ui
-                    .add(egui::Button::new(RichText::new("Tout effacer").size(12.5)))
-                    .clicked()
-                {
+                if ui.add(egui::Button::new(RichText::new(t.clear_btn).size(12.5))).clicked() {
                     app.journal.clear();
                 }
                 if ui
-                    .add(egui::Button::new(components::btn_icon_text(crate::icons::COPY, "Copier")))
-                    .on_hover_text("Copie le journal complet dans le presse-papier")
+                    .add(egui::Button::new(components::btn_icon_text(crate::icons::COPY, t.copy_btn)))
+                    .on_hover_text(t.copy_tooltip)
                     .clicked()
                 {
                     let all: Vec<String> = app
@@ -55,33 +46,27 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                         .iter()
                         .map(|e| {
                             format!(
-                                "{} {} {} → code {}",
+                                "{} {} {} code={}",
                                 fmt_time(e.at),
-                                if e.ok { "OK " } else { "ERR" },
+                                if e.ok { "OK  " } else { "ERR " },
                                 e.command,
                                 e.code
                             )
                         })
                         .collect();
                     ui.ctx().copy_text(all.join("\n"));
-                    app.toasts.info("Journal copié");
+                    app.toasts.info(t.journal_copied_toast.to_string());
                 }
             });
         });
         ui.add_space(4.0);
 
         if app.journal.is_empty() {
-            components::empty_state(
-                ui,
-                p,
-                "Journal vide",
-                "Les commandes exécutées par l'application apparaîtront ici.",
-            );
+            components::empty_state(ui, p, t.journal_empty, t.journal_empty_hint);
             return;
         }
-
         ui.label(
-            RichText::new(format!("{} entrées (plafonné à {JOURNAL_CAP})", app.journal.len()))
+            RichText::new(t.entries_count(app.journal.len(), JOURNAL_CAP))
                 .size(11.0)
                 .color(p.text_secondary),
         );
@@ -99,25 +84,17 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                             if app.filter == LogFilter::Errors && entry.ok {
                                 continue;
                             }
-                            if app.filter == LogFilter::Ufw
-                                && !entry.command.starts_with("ufw")
-                                && !entry.command.starts_with("journalctl -k")
-                            {
+                            if app.filter == LogFilter::Fw && !is_firewall_line(&entry.command) {
                                 continue;
                             }
-                            if app.filter == LogFilter::Fail2ban
-                                && !entry.command.starts_with("fail2ban-client")
-                                && !entry.command.starts_with("systemctl")
-                                && !entry.command.starts_with("journalctl -u fail2ban")
-                            {
+                            if app.filter == LogFilter::F2b && !is_f2b_line(&entry.command) {
                                 continue;
                             }
-
                             ui.label(
                                 RichText::new(fmt_time(entry.at))
                                     .size(11.5)
-                                    .color(p.text_secondary)
-                                    .monospace(),
+                                    .monospace()
+                                    .color(p.text_secondary),
                             );
                             ui.label(
                                 RichText::new(if entry.ok { "✔" } else { "✘" })
@@ -142,22 +119,30 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     });
 }
 
+fn is_firewall_line(cmd: &str) -> bool {
+    cmd.starts_with("ufw") || cmd.starts_with("journalctl -k")
+}
+
+fn is_f2b_line(cmd: &str) -> bool {
+    cmd.starts_with("fail2ban-client")
+        || cmd.starts_with("systemctl")
+        || cmd.starts_with("journalctl -u fail2ban")
+}
+
 fn fmt_time(t: SystemTime) -> String {
-    // Heure locale approximée par l'heure UTC : suffisant pour un journal
-    // d'audit ; l'affichage relatif est dans la barre d'état.
+    // Heure UTC explicite : le journal est une trace technique.
     let secs = t
         .duration_since(SystemTime::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let day = secs / 86400;
+    let days = secs / 86400;
     let rem = secs % 86400;
     let (h, m, s) = (rem / 3600, (rem % 3600) / 60, rem % 60);
-    let date = epoch_to_date(day);
-    format!("{date} {h:02}:{m:02}:{s:02} UTC")
+    format!("{} {h:02}:{m:02}:{s:02} UTC", epoch_to_date(days))
 }
 
 fn epoch_to_date(days: u64) -> String {
-    // Algorithme civil de conversion jours→date (Howard Hinnant).
+    // Algorithme civil de Howard Hinnant.
     let z = days as i64 + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z.rem_euclid(146_097);

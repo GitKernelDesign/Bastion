@@ -1,6 +1,6 @@
 //! Spécification des commandes système et liste blanche.
 //!
-//! Toute commande exécutée par GUFW passe par une [`CommandSpec`], validée
+//! Toute commande exécutée par Bastion passe par une [`CommandSpec`], validée
 //! deux fois : côté interface avant l'envoi, et côté helper root avant
 //! l'exécution (défense en profondeur). Les programmes sont invoqués par
 //! argv direct en local (jamais via un shell) ; en SSH, chaque argument est

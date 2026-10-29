@@ -53,14 +53,14 @@ pub struct HelperResponse {
 pub fn socket_path_for(uid: u32) -> PathBuf {
     let run_user = PathBuf::from("/run/user").join(uid.to_string());
     if run_user.is_dir() {
-        run_user.join("gufw.sock")
+        run_user.join("bastion.sock")
     } else {
-        std::env::temp_dir().join(format!("gufw-{}.sock", uid))
+        std::env::temp_dir().join(format!("bastion-{}.sock", uid))
     }
 }
 
 // ---------------------------------------------------------------------------
-// Serveur (exécuté en root via pkexec par `gufw --serve`)
+// Serveur (exécuté en root via pkexec par `bastion --serve`)
 // ---------------------------------------------------------------------------
 
 /// Point d'entrée du mode `--serve` (bloquant).
@@ -381,7 +381,7 @@ pub async fn spawn_and_connect(
         return HelperTransport::connect(socket).await;
     }
 
-    let pkexec = gufw_pkexec().ok_or_else(|| {
+    let pkexec = pkexec_bin().ok_or_else(|| {
         CoreError::Other(
             "pkexec est introuvable : installez policykit-1 \
              (ou lancez l'application en root, ou utilisez une connexion SSH)."
@@ -453,7 +453,7 @@ pub async fn spawn_and_connect(
 }
 
 /// Copie le binaire hors d'un montage volatile (AppImage) vers
-/// `~/.cache/gufw/helper/`, accessible à root pour l'exec pkexec.
+/// `~/.cache/bastion/helper/`, accessible à root pour l'exec pkexec.
 /// Hors AppImage (installation classique), le chemin est retourné tel quel.
 pub fn stage_helper(app_exe: &Path) -> PathBuf {
     let exe_str = app_exe.to_string_lossy();
@@ -465,7 +465,7 @@ pub fn stage_helper(app_exe: &Path) -> PathBuf {
     let Some(dir) = staging_dir() else {
         return app_exe.to_path_buf();
     };
-    let staged = dir.join(app_exe.file_name().unwrap_or_else(|| std::ffi::OsStr::new("gufw")));
+    let staged = dir.join(app_exe.file_name().unwrap_or_else(|| std::ffi::OsStr::new("bastion")));
 
     let src_len = std::fs::metadata(app_exe).map(|m| m.len()).unwrap_or(0);
     let ok = match std::fs::metadata(&staged) {
@@ -495,13 +495,13 @@ fn staging_dir() -> Option<PathBuf> {
         .or_else(|| {
             std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache"))
         })?;
-    let dir = base.join("gufw").join("helper");
+    let dir = base.join("bastion").join("helper");
     std::fs::create_dir_all(&dir).ok()?;
     let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
     Some(dir)
 }
 
-fn gufw_pkexec() -> Option<PathBuf> {
+fn pkexec_bin() -> Option<PathBuf> {
     ["/usr/bin/pkexec", "/bin/pkexec"]
         .iter()
         .map(PathBuf::from)
@@ -562,7 +562,7 @@ mod spawn_tests {
     #[tokio::test]
     async fn spawn_and_connect_echoue_vite_sur_chemin_invalide() {
         let socket = std::env::temp_dir().join(format!(
-            "gufw-ff-{}-{}.sock",
+            "bastion-ff-{}-{}.sock",
             std::process::id(),
             line!()
         ));
@@ -595,22 +595,22 @@ mod spawn_tests {
     fn stage_helper_copie_le_binaire_du_montage() {
         // Chemin « volatile » au nom AppImage, parfaitement créable.
         let mount = std::env::temp_dir()
-            .join(format!(".mount_TESTGUFW-{}-{}", std::process::id(), line!()));
-        let bin = mount.join("usr/bin/gufw");
+            .join(format!(".mount_TESTBASTION-{}-{}", std::process::id(), line!()));
+        let bin = mount.join("usr/bin/bastion");
         let _ = std::fs::remove_dir_all(&mount);
         std::fs::create_dir_all(bin.parent().unwrap()).unwrap();
         std::fs::write(&bin, b"contenu factice du binaire pour test").unwrap();
 
         // Hors montage : inchangé.
         assert_eq!(
-            stage_helper(Path::new("/usr/bin/gufw")),
-            PathBuf::from("/usr/bin/gufw")
+            stage_helper(Path::new("/usr/bin/bastion")),
+            PathBuf::from("/usr/bin/bastion")
         );
 
         // Montage volatile : copié dans le cache, contenu identique.
         let staged = stage_helper(&bin);
         assert_ne!(staged, bin, "devrait être copié");
-        assert!(staged.to_string_lossy().contains("gufw"), "chemin : {staged:?}");
+        assert!(staged.to_string_lossy().contains("bastion"), "chemin : {staged:?}");
         assert_eq!(
             std::fs::read(&staged).unwrap(),
             b"contenu factice du binaire pour test".to_vec()

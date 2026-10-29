@@ -1,11 +1,12 @@
 //! État global de l'interface et boucle de rendu.
 
 use crate::config::AppConfig;
+use crate::i18n::{tr, FormError, Lang, Tr};
 use crate::toast::{ToastAction, Toasts};
-use crate::worker::{Event, Job, LogEntry, WorkerHandle};
-use gufw_core::model::*;
-use gufw_core::op::{Op, OpResult, ServiceAction};
-use gufw_core::ssh::SshParams;
+use crate::worker::{Job, LogEntry, WorkerHandle, Event};
+use bastion_core::model::*;
+use bastion_core::op::{Op, OpResult, ServiceAction};
+use bastion_core::ssh::SshParams;
 use std::collections::{HashMap, VecDeque};
 use std::time::Instant;
 
@@ -30,7 +31,6 @@ impl Screen {
             _ => Screen::Connect,
         }
     }
-
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,7 +40,7 @@ pub enum ConnPhase {
     Connected,
 }
 
-/// Ce que l'interface attend pour chaque opération en vol.
+/// Ce que l'interface attend du résultat d'une opération en vol.
 #[derive(Debug, Clone)]
 pub enum Pending {
     RefreshStatus,
@@ -63,7 +63,7 @@ pub enum Pending {
     BannedAll,
     Service(ServiceAction),
     ReloadJail,
-    Logs(LogSource),
+    Logs,
 }
 
 /// Modales.
@@ -190,11 +190,11 @@ impl Default for AddRuleForm {
 }
 
 impl AddRuleForm {
-    /// Construit la règle (validée), ou la raison du refus.
-    pub fn to_new_rule(&self) -> Result<NewRule, String> {
+    /// Construit la règle validée, ou l'erreur localisable.
+    pub fn to_new_rule(&self) -> Result<NewRule, FormError> {
         if self.use_profile {
             let Some(profile) = &self.profile else {
-                return Err("choisissez un profil d'application".into());
+                return Err(FormError::ChooseProfile);
             };
             return Ok(NewRule {
                 action: self.action,
@@ -209,13 +209,20 @@ impl AddRuleForm {
             });
         }
         let port = self.port.trim();
-        if !gufw_core::ufw::is_valid_port_spec(port) {
-            return Err("port ou service invalide (ex. : 22, 8080, 8000:8010, ssh)".into());
+        if port.is_empty() {
+            return Err(FormError::PortRequired);
         }
-        for (label, addr) in [("source", &self.from_addr), ("destination", &self.to_addr)] {
-            let a = addr.trim();
-            if !a.is_empty() && !gufw_core::ufw::is_valid_addr(a) {
-                return Err(format!("adresse {label} invalide (IPv4/IPv6/CIDR)"));
+        if !bastion_core::ufw::is_valid_port_spec(port) {
+            return Err(FormError::InvalidPort);
+        }
+        if let Some(a) = self.from_addr.trim().strip_suffix("") {
+            if !a.is_empty() && !bastion_core::ufw::is_valid_addr(a) {
+                return Err(FormError::InvalidSource);
+            }
+        }
+        if let Some(a) = self.to_addr.trim().strip_suffix("") {
+            if !a.is_empty() && !bastion_core::ufw::is_valid_addr(a) {
+                return Err(FormError::InvalidDestination);
             }
         }
         Ok(NewRule {
@@ -223,15 +230,15 @@ impl AddRuleForm {
             dir: self.dir,
             port: Some(port.to_string()),
             proto: self.proto,
-            from_addr: self.from_addr.trim().empty_to_none(),
-            to_addr: self.to_addr.trim().empty_to_none(),
+            from_addr: non_empty(&self.from_addr),
+            to_addr: non_empty(&self.to_addr),
             app_profile: None,
             insert_at: self.parse_insert_at()?,
             comment: self.comment_text(),
         })
     }
 
-    fn parse_insert_at(&self) -> Result<Option<u32>, String> {
+    fn parse_insert_at(&self) -> Result<Option<u32>, FormError> {
         let s = self.insert_at.trim();
         if s.is_empty() {
             return Ok(None);
@@ -240,7 +247,7 @@ impl AddRuleForm {
             .ok()
             .filter(|n| *n >= 1)
             .map(Some)
-            .ok_or_else(|| "position d'insertion invalide".into())
+            .ok_or(FormError::BadInsert)
     }
 
     fn comment_text(&self) -> Option<String> {
@@ -252,51 +259,39 @@ impl AddRuleForm {
         }
     }
 
-    /// Aperçu de la commande réelle.
-    pub fn preview(&self) -> String {
+    /// Aperçu exact de la commande (police mono), ou de l'erreur.
+    pub fn preview(&self, t: &Tr) -> String {
         match self.to_new_rule() {
-            Ok(rule) => match gufw_core::ufw::build_rule_args(&rule) {
+            Ok(rule) => match bastion_core::ufw::build_rule_args(&rule) {
                 Ok(args) => {
                     let mut s = String::from("ufw");
                     for a in args {
                         s.push(' ');
-                        s.push_str(&gufw_core::exec::quote_shell(&a));
+                        s.push_str(&bastion_core::exec::quote_shell(&a));
                     }
                     s
                 }
-                Err(e) => e.to_string(),
+                Err(e) => t.localize_error(&e),
             },
-            Err(e) => format!("— {e}"),
+            Err(e) => format!("— {}", t.form_error(e)),
         }
     }
 }
 
-trait EmptyToNone {
-    fn empty_to_none(&self) -> Option<String>;
-}
-
-impl EmptyToNone for &str {
-    fn empty_to_none(&self) -> Option<String> {
-        if self.is_empty() {
-            None
-        } else {
-            Some(self.to_string())
-        }
+fn non_empty(s: &str) -> Option<String> {
+    let t = s.trim();
+    if t.is_empty() {
+        None
+    } else {
+        Some(t.to_string())
     }
-}
-
-/// Filtre du journal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LogFilter {
-    All,
-    Errors,
-    Ufw,
-    Fail2ban,
 }
 
 pub struct GuiApp {
     pub worker: WorkerHandle,
     pub cfg: AppConfig,
+    pub lang: Lang,
+    pub tr: &'static Tr,
     pub screen: Screen,
     pub phase: ConnPhase,
     pub conn_desc: String,
@@ -305,7 +300,7 @@ pub struct GuiApp {
     pub pending: HashMap<u64, Pending>,
     pub next_id: u64,
     pub journal: VecDeque<LogEntry>,
-    pub filter: LogFilter,
+    pub filter: crate::app::LogFilter,
     pub toasts: Toasts,
     pub modal: Option<Modal>,
     pub firewall: FirewallUi,
@@ -317,18 +312,29 @@ pub struct GuiApp {
     pub last_error_toast: Option<(String, Instant)>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogFilter {
+    All,
+    Errors,
+    Fw,
+    F2b,
+}
+
 impl GuiApp {
-    pub fn new(cc: &eframe::CreationContext<'_>) -> GuiApp {
+    pub fn new(cc: &eframe::CreationContext) -> GuiApp {
         crate::fonts::install(&cc.egui_ctx);
         let cfg = AppConfig::load();
-        let _ = crate::theme::apply(&cc.egui_ctx, cfg.theme, cfg.font_scale);
-
+        let lang = cfg.language;
+        let t = tr(lang);
+        crate::theme::apply(&cc.egui_ctx, cfg.theme, cfg.font_scale);
         let worker = WorkerHandle::spawn();
         worker.send(Job::ProbeLocalTools);
 
         GuiApp {
             worker,
             cfg,
+            lang,
+            tr: t,
             screen: Screen::Connect,
             phase: ConnPhase::Disconnected,
             conn_desc: String::new(),
@@ -367,8 +373,16 @@ impl GuiApp {
         }
     }
 
-    // ----------------------------------------------------------------- envois
+    /// Changement de langue : traductions + titre de fenêtre.
+    pub fn set_language(&mut self, ctx: &egui::Context, lang: Lang) {
+        self.lang = lang;
+        self.cfg.language = lang;
+        self.cfg.save();
+        self.tr = tr(lang);
+        ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.tr.window_title.to_string()));
+    }
 
+    // ── Envoi d'opérations ────────────────────────────────────────────────
     pub fn next_op_id(&mut self) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
@@ -381,7 +395,6 @@ impl GuiApp {
         self.worker.send(Job::Op { id, op });
     }
 
-    /// Rafraîchit toutes les données affichées.
     pub fn refresh_all(&mut self) {
         self.last_refresh_sent = Some(Instant::now());
         self.send_op(Pending::RefreshStatus, Op::UfwStatus);
@@ -394,19 +407,12 @@ impl GuiApp {
     }
 
     pub fn is_refreshing(&self) -> bool {
-        self.pending.values().any(|p| {
-            matches!(
-                p,
-                Pending::RefreshStatus
-                    | Pending::RefreshRules
-                    | Pending::RefreshF2b
-                    | Pending::RefreshService
-            )
-        })
+        self.pending
+            .values()
+            .any(|p| matches!(p, Pending::RefreshStatus | Pending::RefreshRules | Pending::RefreshF2b | Pending::RefreshService | Pending::RefreshJail))
     }
 
-    // ------------------------------------------------------------ journalisation
-
+    // ── Journal / messages ────────────────────────────────────────────────
     pub fn push_journal(&mut self, entry: LogEntry) {
         while self.journal.len() >= JOURNAL_CAP {
             self.journal.pop_front();
@@ -414,7 +420,7 @@ impl GuiApp {
         self.journal.push_back(entry);
     }
 
-    pub fn toast_error_throttled(&mut self, msg: String) {
+    fn toast_error_throttled(&mut self, msg: String) {
         let repeat_ok = self
             .last_error_toast
             .as_ref()
@@ -432,8 +438,7 @@ impl GuiApp {
         self.status_msg = msg;
     }
 
-    // --------------------------------------------------------- cycle événements
-
+    // ── Événements du worker ──────────────────────────────────────────────
     pub fn apply_event(&mut self, ev: Event) {
         match ev {
             Event::Connected { desc } => {
@@ -443,36 +448,30 @@ impl GuiApp {
                 self.form.passphrase.clear();
                 self.form.sudo_password.clear();
                 self.modal = None;
-                // Feedback évident : on lande directement sur les données.
                 self.screen = Screen::Firewall;
-                self.toasts.success("Connecté — pare-feu et Fail2Ban en cours de lecture…");
+                self.toasts.success(self.tr.toast_connected.to_string());
                 self.refresh_all();
             }
             Event::ConnectFailed { reason } => {
                 self.phase = ConnPhase::Disconnected;
-                // Retire la modale « clé serveur » d'attente si la connexion
-                // a échoué pour une autre raison (auth, réseau…).
                 if let Some(Modal::HostKey(ctx)) = &self.modal {
                     if ctx.fingerprint.is_empty() {
                         self.modal = None;
                     }
                 }
-                self.toasts.error(format!("Connexion impossible — {reason}"));
+                self.toasts.error(self.tr.conn_failed(&reason));
             }
-            Event::HostKeyUnknown { host, fingerprint } => {
+            Event::HostKeyUnknown { fingerprint, .. } => {
                 self.phase = ConnPhase::Disconnected;
                 if let Some(Modal::HostKey(ctx)) = &mut self.modal {
                     ctx.fingerprint = fingerprint;
-                    let _ = host;
                 }
-                // Le contexte complet (params) est fourni par l'écran Connexion.
             }
-            Event::HostKeyChanged { host, old, new } => {
+            Event::HostKeyChanged { new, old, .. } => {
                 self.phase = ConnPhase::Disconnected;
                 if let Some(Modal::HostKey(ctx)) = &mut self.modal {
                     ctx.fingerprint = new;
                     ctx.old = Some(old);
-                    let _ = host;
                 }
             }
             Event::Disconnected { reason } => {
@@ -481,9 +480,9 @@ impl GuiApp {
                 self.phase = ConnPhase::Disconnected;
                 self.conn_desc.clear();
                 if initiated {
-                    self.toasts.info("Déconnecté");
+                    self.toasts.info(self.tr.toast_disconnected.to_string());
                 } else {
-                    self.toasts.error(format!("Connexion perdue — {reason}"));
+                    self.toasts.error(self.tr.conn_lost(&reason));
                 }
             }
             Event::OpDone { id, result } => {
@@ -491,16 +490,12 @@ impl GuiApp {
                     self.apply_op_result(pending, result);
                 }
             }
-            Event::Log(entry) => {
-                self.push_journal(entry);
-            }
-            Event::ProbeLocalTools { ufw, fail2ban } => {
-                self.probe = (ufw, fail2ban);
-            }
+            Event::Log(entry) => self.push_journal(entry),
+            Event::ProbeLocalTools { ufw, fail2ban } => self.probe = (ufw, fail2ban),
         }
     }
 
-    fn apply_op_result(&mut self, pending: Pending, result: Result<OpResult, gufw_core::CoreError>) {
+    fn apply_op_result(&mut self, pending: Pending, result: Result<OpResult, bastion_core::CoreError>) {
         match result {
             Ok(res) => self.apply_op_ok(pending, res),
             Err(e) => self.apply_op_err(pending, e),
@@ -528,7 +523,6 @@ impl GuiApp {
             }
             Pending::RefreshF2b => {
                 if let OpResult::F2bGlobal(g) = res {
-                    // Préserve la sélection si la prison existe toujours.
                     if let Some(sel) = &self.f2b.selected_jail {
                         if !g.jails.contains(sel) {
                             self.f2b.selected_jail = None;
@@ -550,64 +544,60 @@ impl GuiApp {
                 }
             }
             Pending::Enable => {
-                self.success("Pare-feu activé");
+                self.success(self.tr.toast_fw_enabled);
                 self.send_op(Pending::RefreshStatus, Op::UfwStatus);
                 self.send_op(Pending::RefreshRules, Op::UfwRules);
             }
             Pending::Disable => {
-                self.success("Pare-feu désactivé");
+                self.success(self.tr.toast_fw_disabled);
                 self.send_op(Pending::RefreshStatus, Op::UfwStatus);
             }
             Pending::Reload => {
-                self.success("Pare-feu rechargé");
+                self.success(self.tr.toast_fw_reloaded);
                 self.send_op(Pending::RefreshStatus, Op::UfwStatus);
+                self.send_op(Pending::RefreshRules, Op::UfwRules);
             }
             Pending::Reset => {
-                self.success("Pare-feu réinitialisé — toutes les règles ont été supprimées");
+                self.success(self.tr.toast_fw_reset);
                 self.refresh_all();
             }
             Pending::Policy(dir) => {
-                let cible = match dir {
-                    Direction::Incoming => "entrante",
-                    Direction::Outgoing => "sortante",
-                    Direction::Routed => "routage",
-                };
-                self.success(&format!("Politique {cible} appliquée"));
+                let msg = self.tr.policy_applied(dir);
+                self.success(&msg);
                 self.send_op(Pending::RefreshStatus, Op::UfwStatus);
                 self.send_op(Pending::RefreshRules, Op::UfwRules);
             }
             Pending::Logging => {
-                self.success("Niveau de journalisation appliqué");
+                self.success(self.tr.toast_logging_applied);
                 self.send_op(Pending::RefreshStatus, Op::UfwStatus);
-                self.send_op(Pending::RefreshRules, Op::UfwRules);
             }
             Pending::AddRule => {
-                self.success("Règle ajoutée");
+                self.success(self.tr.toast_rule_added);
                 self.send_op(Pending::RefreshStatus, Op::UfwStatus);
                 self.send_op(Pending::RefreshRules, Op::UfwRules);
             }
             Pending::DeleteRule => {
-                self.success("Règle supprimée");
+                self.success(self.tr.toast_rule_deleted);
                 self.send_op(Pending::RefreshStatus, Op::UfwStatus);
                 self.send_op(Pending::RefreshRules, Op::UfwRules);
             }
             Pending::Report => {
-                if let OpResult::Report(r) = res {
-                    self.modal = Some(Modal::Report(r));
+                if let OpResult::Report(text) = res {
+                    self.modal = Some(Modal::Report(text));
                 }
             }
             Pending::Ban { jail, ip } => {
                 self.toasts.success_undo(
-                    format!("{ip} bannie ({jail})"),
-                    ToastAction::Reunban { jail: jail.clone(), ip: ip.clone() },
+                    self.tr.ip_banned_toast(&ip, &jail),
+                    ToastAction::Reunban { jail: jail.clone(), ip },
                 );
                 self.send_op(Pending::RefreshJail, Op::F2bJail { jail });
                 self.send_op(Pending::RefreshF2b, Op::F2bStatus);
             }
             Pending::Unban { jail, ip } => {
                 self.toasts.success_undo(
-                    format!("{ip} débannie ({jail})"),
-                    ToastAction::Reban { jail: jail.clone(), ip: ip.clone() },
+                    self.tr.ip_unbanned_toast(&ip, &jail),
+                    ToastAction::Reban { jail: jail.clone(), ip },
                 );
                 self.send_op(Pending::RefreshJail, Op::F2bJail { jail });
                 self.send_op(Pending::RefreshF2b, Op::F2bStatus);
@@ -615,58 +605,54 @@ impl GuiApp {
             Pending::BannedAll => {
                 if let OpResult::BannedAll(b) = res {
                     let total: usize = b.iter().map(|(_, ips)| ips.len()).sum();
-                    let mut text = format!("Total : {total} IP bannie(s), toutes prisons confondues.\n\n");
+                    let mut text = format!("{}\n", self.tr.banned_list_title);
                     for (jail, ips) in &b {
                         if ips.is_empty() {
                             continue;
                         }
-                        text.push_str(&format!("{jail} ({}):\n", ips.len()));
+                        text.push_str(&format!("\n{} ({}):\n", jail, ips.len()));
                         for ip in ips {
                             text.push_str(&format!("  {ip}\n"));
                         }
-                        text.push('\n');
                     }
                     if total == 0 {
-                        text.push_str("Aucune adresse n'est bannie actuellement.");
+                        text.push_str(&format!("\n{}", self.tr.no_banned));
                     }
                     self.f2b.banned_all = Some(b);
                     self.modal = Some(Modal::Logs {
-                        title: "Toutes les IP bannies".into(),
+                        title: self.tr.all_ips_btn.to_string(),
                         text,
                     });
                 }
             }
             Pending::Service(action) => {
                 let msg = match action {
-                    ServiceAction::Start => "Service Fail2Ban démarré",
-                    ServiceAction::Stop => "Service Fail2Ban arrêté",
-                    ServiceAction::Restart => "Service Fail2Ban redémarré",
-                    ServiceAction::ReloadOrRestart => "Service Fail2Ban rechargé",
+                    ServiceAction::Start => self.tr.toast_service_started,
+                    ServiceAction::Stop => self.tr.toast_service_stopped,
+                    ServiceAction::Restart => self.tr.toast_service_restarted,
+                    ServiceAction::ReloadOrRestart => self.tr.toast_service_reloaded,
                 };
                 self.success(msg);
                 self.send_op(Pending::RefreshService, Op::ServiceState);
                 self.send_op(Pending::RefreshF2b, Op::F2bStatus);
-                if let Some(jail) = &self.f2b.selected_jail {
-                    let jail = jail.clone();
+                if let Some(jail) = self.f2b.selected_jail.clone() {
                     self.send_op(Pending::RefreshJail, Op::F2bJail { jail });
                 }
             }
             Pending::ReloadJail => {
-                self.success("Prison rechargée");
+                self.success(self.tr.toast_jail_reloaded);
                 self.send_op(Pending::RefreshService, Op::ServiceState);
                 self.send_op(Pending::RefreshF2b, Op::F2bStatus);
-                if let Some(jail) = &self.f2b.selected_jail {
-                    let jail = jail.clone();
+                if let Some(jail) = self.f2b.selected_jail.clone() {
                     self.send_op(Pending::RefreshJail, Op::F2bJail { jail });
                 }
             }
-            Pending::Logs(which) => {
-                if let OpResult::Text(t) = res {
-                    let title = match which {
-                        LogSource::Fail2ban => "Journal du service fail2ban",
-                        LogSource::UfwBlocks => "Derniers blocages UFW (journal noyau)",
-                    };
-                    self.modal = Some(Modal::Logs { title: title.into(), text: t });
+            Pending::Logs => {
+                if let OpResult::Text(text) = res {
+                    self.modal = Some(Modal::Logs {
+                        title: self.tr.service_log_btn.to_string(),
+                        text,
+                    });
                 }
             }
         }
@@ -674,14 +660,13 @@ impl GuiApp {
 
     fn success(&mut self, msg: &str) {
         if self.cfg.success_toasts {
-            self.toasts.success(msg);
+            self.toasts.success(msg.to_string());
         }
         self.status_msg = msg.to_string();
     }
 
-    fn apply_op_err(&mut self, pending: Pending, e: gufw_core::CoreError) {
-        let msg = e.to_string();
-        // Les rafraîchissements échoués ne spamment pas : barre d'état only.
+    fn apply_op_err(&mut self, pending: Pending, e: bastion_core::CoreError) {
+        let msg = self.tr.localize_error(&e);
         let is_refresh = matches!(
             pending,
             Pending::RefreshStatus
@@ -700,18 +685,15 @@ impl GuiApp {
     }
 }
 
-// L'« état du service » est sondé par systemctl is-active (voir Op::ServiceState).
-
 impl eframe::App for GuiApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
 
-        // 1. Événements du worker.
         for ev in self.worker.poll() {
             self.apply_event(ev);
         }
 
-        // 2. Rafraîchissement automatique.
+        // Actualisation automatique.
         if self.phase == ConnPhase::Connected && self.cfg.auto_refresh {
             let due = self
                 .last_refresh_sent
@@ -722,18 +704,15 @@ impl eframe::App for GuiApp {
             }
         }
 
-        // 3. Raccourcis clavier.
         self.handle_shortcuts(&ctx);
 
-        // 4. Rendu.
         let p = crate::theme::Palette::new(self.cfg.theme);
         crate::ui::render(self, ui, &p);
 
-        // 5. Overlay : modales + toasts.
         if let Some(modal) = self.modal.take() {
             crate::modal::render(self, &ctx, &p, modal);
         }
-        let actions = self.toasts.show(&ctx, &p);
+        let actions = self.toasts.show(&ctx, &p, self.tr);
         for action in actions {
             match action {
                 ToastAction::Reban { jail, ip } => {
@@ -751,23 +730,20 @@ impl eframe::App for GuiApp {
             }
         }
 
-        // Redemande une image tant que l'auto-actualisation est active.
         if self.phase == ConnPhase::Connected && self.cfg.auto_refresh {
             ctx.request_repaint_after(std::time::Duration::from_millis(500));
         }
     }
+
 }
 
 impl GuiApp {
     fn handle_shortcuts(&mut self, ctx: &egui::Context) {
         // Échap ferme la modale, même pendant la saisie.
-        let escape = ctx.input(|i| i.key_pressed(egui::Key::Escape));
-        if escape && self.modal.is_some() {
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) && self.modal.is_some() {
             self.modal = None;
             return;
         }
-
-        // Les autres raccourcis sont ignorés pendant la saisie de texte.
         if ctx.egui_wants_keyboard_input() {
             return;
         }
@@ -788,7 +764,6 @@ impl GuiApp {
                 num,
             )
         });
-
         if !ctrl {
             return;
         }

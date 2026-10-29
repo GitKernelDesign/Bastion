@@ -1,0 +1,18 @@
+[Desktop Entry]
+Type=Application
+Name=Bastion
+GenericName=UFW & Fail2Ban Manager
+GenericName[fr]=Gestionnaire UFW & Fail2Ban
+GenericName[es]=Gestor de UFW y Fail2Ban
+GenericName[de]=UFW- & Fail2Ban-Verwaltung
+Comment=Manage the UFW firewall and Fail2Ban, locally or over SSH
+Comment[fr]=Gérez le pare-feu UFW et Fail2Ban, en local ou via SSH
+Comment[es]=Gestione el cortafuegos UFW y Fail2Ban, local o por SSH
+Comment[de]=Verwalten Sie die UFW-Firewall und Fail2Ban, lokal oder über SSH
+Exec=bastion
+Icon=bastion
+Terminal=false
+Categories=System;Security;
+Keywords=firewall;ufw;fail2ban;security;ssh;bastion;
+StartupWMClass=bastion
+SingleMainWindow=true

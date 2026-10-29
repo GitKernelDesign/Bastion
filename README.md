@@ -1,8 +1,8 @@
-# GUFW
+# Bastion
 
 **Interface graphique simple, sobre et élégante pour gérer intégralement UFW et Fail2Ban — en local ou sur un ordinateur distant via SSH.**
 
-Écrite en Rust pur (interface [egui](https://github.com/emilk/egui), client SSH [russh](https://github.com/Eugeny/russh) embarqué), distribuée en **AppImage** autonome.
+Écrite en Rust pur (interface [egui](https://github.com/emilk/egui), client SSH [russh](https://github.com/Eugeny/russh) embarqué), distribuée en **AppImage** autonome. Interface disponible en **français, anglais, espagnol et allemand** (détection automatique, modifiable dans les réglages).
 
 ---
 
@@ -28,15 +28,16 @@
 ### Confort
 - Journal intégré : chaque commande exécutée est horodatée et visible (filtres, copie) ;
 - Actualisation automatique (3–60 s), notifications, annulation des bannissements/débannissements ;
-- Thème sombre/clair, taille de texte réglable, raccourcis clavier (`Ctrl+1…5`, `Ctrl+R`, `Ctrl+N`).
+- Thème sombre/clair, taille de texte réglable, raccourcis clavier (`Ctrl+1…5`, `Ctrl+R`, `Ctrl+N`) ;
+- Langue : anglais, français, espagnol, allemand — détectée au premier lancement, persistée.
 
 ## Sécurité (en bref)
 
 | Mécanisme | Détail |
 |---|---|
-| Escalade root unique | Le premier accès aux outils lance `pkexec gufw --serve …` : **une** demande de mot de passe par session. L'assistant root n'exécute que `ufw`, `fail2ban-client`, `systemctl` et `journalctl` (unités `fail2ban`/`ufw` uniquement), validés par une liste blanche structurelle des deux côtés (interface + assistant). |
+| Escalade root unique | Le premier accès aux outils lance `pkexec bastion --serve …` : **une** demande de mot de passe par session. L'assistant root n'exécute que `ufw`, `fail2ban-client`, `systemctl` et `journalctl` (unités `fail2ban`/`ufw` uniquement), validés par une liste blanche structurelle des deux côtés (interface + assistant). |
 | Pas de shell | En local, exécution par argv direct. En SSH, chaque argument est échappé POSIX (`quote_shell`, testé unitairement). Aucune injection possible. |
-| Socket UNIX privée | `/run/user/<uid>/gufw.sock`, permissions 0600, vérification `SO_PEERCRED`, arrêt automatique après inactivité. |
+| Socket UNIX privée | `/run/user/<uid>/bastion.sock`, permissions 0600, vérification `SO_PEERCRED`, arrêt automatique après inactivité. |
 | Mots de passe | Jamais écrits sur le disque, effacés de la mémoire après connexion. |
 | Clés de serveur | Empreinte SHA256 affichée à la 1re connexion, mémorisée, alerte forte si elle change. |
 
@@ -46,29 +47,31 @@ L'ergonomie complète (personas, parcours, système de design, décisions refus�
 
 ```bash
 # Rendre exécutable puis lancer :
-chmod +x GUFW-0.1.0-x86_64.AppImage
-./GUFW-0.1.0-x86_64.AppImage
+chmod +x Bastion-0.1.0-x86_64.AppImage
+./Bastion-0.1.0-x86_64.AppImage
 ```
 
 - **Cet ordinateur** → *Se connecter* → saisissez votre mot de passe une fois (agent polkit de votre bureau) ;
 - **SSH** → hôte, port, utilisateur, mot de passe ou clé, *Se connecter* (l'option « via sudo » convient aux connexions non-root).
 
+La langue se choisit dans **Réglages → Apparence → Langue** (FR / EN / ES / DE) ; la détection initiale suit `LANG`/`LC_MESSAGES`.
+
 ## Compilation depuis les sources
 
 ```bash
 # Prérequis : Rust (rustup), gcc (paquet build-essential)
-cargo build --release            # binaire : target/release/gufw
-cargo test                       # 24 tests unitaires (parseurs, whitelist, protocole)
+cargo build --release            # binaire : target/release/bastion
+cargo test                       # 28 tests unitaires (parseurs, whitelist, protocole, i18n)
 
 # AppImage complet :
-./packaging/build.sh             # → dist/GUFW-0.1.0-x86_64.AppImage
+./packaging/build.sh             # → dist/Bastion-0.1.0-x86_64.AppImage
 ```
 
 ## Architecture
 
 ```
 crates/
-├── gufw-core/            # Aucune dépendance graphique — testable isolément
+├── bastion-core/         # Aucune dépendance graphique — testable isolément
 │   ├── exec.rs           # CommandSpec + liste blanche + échappement shell
 │   ├── ufw.rs            # Commandes ufw + parseurs (status verbose/numbered…)
 │   ├── fail2ban.rs       # Commandes fail2ban-client + parseurs tolérants
@@ -77,10 +80,11 @@ crates/
 │   ├── ssh.rs            # Transport russh (TOFU, sudo, auth mot de passe/clé)
 │   ├── op.rs             # Opérations de haut niveau (Op → OpResult)
 │   └── model.rs          # Règles, prisons, états…
-└── gufw/                 # Interface egui
+└── bastion/              # Interface egui
     ├── app.rs            # État, événements worker, opérations pendantes
     ├── worker.rs         # Thread async ↔ UI (journalisation de chaque commande)
     ├── theme.rs          # Palette sobre, typographie IBM Plex
+    ├── i18n/             # Traductions FR / EN / ES / DE, détection de langue
     ├── ui/               # 5 écrans (connexion, pare-feu, fail2ban, journal, réglages)
     └── modal.rs          # Confirmations, ajout de règle, clé serveur…
 ```

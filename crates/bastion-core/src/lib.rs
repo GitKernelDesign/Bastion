@@ -1,4 +1,4 @@
-//! Cœur applicatif de GUFW.
+//! Cœur applicatif de Bastion.
 //!
 //! Ce crate ne dépend d'aucun toolkit graphique : il définit les modèles de
 //! données, les parseurs des sorties d'`ufw` et de `fail2ban-client`, la liste

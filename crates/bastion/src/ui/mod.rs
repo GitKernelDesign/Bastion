@@ -1,5 +1,4 @@
-//! Mise en page globale : barre latérale, barre supérieure, barre d'état,
-//! et répartition vers les écrans.
+//! Mise en page globale : barre latérale, barre supérieure, barre d'état.
 
 pub mod connect;
 pub mod fail2ban;
@@ -8,7 +7,6 @@ pub mod journal;
 pub mod settings;
 
 use crate::app::{ConnPhase, GuiApp, Screen};
-use crate::components;
 use crate::icons;
 use crate::theme::Palette;
 use egui::{Align, Color32, Layout, Margin, RichText};
@@ -38,28 +36,22 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
         });
 }
 
-// --------------------------------------------------------------------- barre supérieure
-
+// ─── Barre supérieure ────────────────────────────────────────────────────────
 fn topbar(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
+    let t = app.tr;
     egui::Panel::top("topbar")
         .exact_size(52.0)
-        .frame(
-            egui::Frame::NONE
-                .fill(p.bg)
-                .inner_margin(Margin{ left: 20, right: 20, top: 8, bottom: 8 }),
-        )
+        .frame(egui::Frame::NONE.fill(p.bg).inner_margin(Margin{ left: 20, right: 20, top: 8, bottom: 8 }))
         .show(ui, |ui| {
             ui.horizontal_centered(|ui| {
-                // Indicateur de connexion (question la plus fréquente :
-                // « sur quelle machine suis-je en train d'agir ? »)
                 let (color, dot_icon, label) = match app.phase {
                     ConnPhase::Connected => (
                         if app.conn_desc.starts_with("SSH") { p.accent } else { p.success },
                         icons::GPP_GOOD,
                         app.conn_desc.clone(),
                     ),
-                    ConnPhase::Connecting => (p.warning, icons::GPP_MAYBE, "Connexion…".into()),
-                    ConnPhase::Disconnected => (p.text_secondary, icons::GPP_BAD, "Non connecté".into()),
+                    ConnPhase::Connecting => (p.warning, icons::GPP_MAYBE, t.status_connecting.to_string()),
+                    ConnPhase::Disconnected => (p.text_secondary, icons::GPP_BAD, t.status_disconnected.to_string()),
                 };
                 ui.label(icons::icon_sz(dot_icon, 18.0, color));
                 ui.label(
@@ -69,26 +61,26 @@ fn topbar(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 );
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    // Actualisation manuelle
                     let refreshing = app.is_refreshing();
                     let btn = egui::Button::new(icons::icon(icons::REFRESH).size(16.0))
                         .fill(if refreshing { p.card_hover } else { Color32::TRANSPARENT });
                     if ui
                         .add_enabled(app.phase == ConnPhase::Connected && !refreshing, btn)
-                        .on_hover_text("Actualiser (Ctrl+R)")
+                        .on_hover_text(t.tooltip_refresh)
                         .clicked()
                     {
                         app.refresh_all();
                     }
 
-                    // Auto-actualisation
                     let mut auto = app.cfg.auto_refresh;
-                    ui.add_enabled(
-                        app.phase == ConnPhase::Connected,
-                        egui::Checkbox::new(&mut auto, RichText::new("Auto").size(12.5)),
-                    )
-                    .on_hover_text("Actualise l'état périodiquement");
-                    if auto != app.cfg.auto_refresh {
+                    if ui
+                        .add_enabled(
+                            app.phase == ConnPhase::Connected,
+                            egui::Checkbox::new(&mut auto, RichText::new(t.topbar_auto).size(12.5)),
+                        )
+                        .on_hover_text(t.tooltip_auto)
+                        .changed()
+                    {
                         app.cfg.auto_refresh = auto;
                         app.cfg.save();
                     }
@@ -97,50 +89,48 @@ fn topbar(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
         });
 }
 
-// --------------------------------------------------------------------- navigation
-
+// ─── Barre latérale ──────────────────────────────────────────────────────────
 fn sidebar(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
+    let t = app.tr;
     egui::Panel::left("nav")
         .exact_size(216.0)
-        .frame(
-            egui::Frame::NONE
-                .fill(p.bg)
-                .inner_margin(Margin::same(12)),
-        )
+        .frame(egui::Frame::NONE.fill(p.bg).inner_margin(Margin::same(12)))
         .show(ui, |ui| {
             ui.add_space(6.0);
 
-            // Marque.
             ui.horizontal(|ui| {
                 ui.label(icons::icon_sz(icons::SHIELD, 26.0, p.accent));
                 ui.vertical(|ui| {
                     ui.label(
-                        RichText::new("GUFW")
+                        RichText::new("Bastion")
                             .size(17.0)
                             .family(egui::FontFamily::Name("SemiBold".into())),
                     );
-                    ui.label(RichText::new("UFW & Fail2Ban").size(11.0).color(p.text_secondary));
+                    ui.label(
+                        RichText::new(t.app_tagline)
+                            .size(11.0)
+                            .color(p.text_secondary),
+                    );
                 });
             });
             ui.add_space(16.0);
 
-            let entries: [(Screen, &str, &str); 5] = [
-                (Screen::Connect, icons::LOGIN, "Connexion"),
-                (Screen::Firewall, icons::SECURITY, "Pare-feu"),
-                (Screen::Fail2Ban, icons::BAN, "Fail2Ban"),
-                (Screen::Journal, icons::HISTORY, "Journal"),
-                (Screen::Settings, icons::SETTINGS, "Paramètres"),
+            let entries = [
+                (Screen::Connect, icons::LOGIN, t.nav_connect),
+                (Screen::Firewall, icons::SECURITY, t.nav_firewall),
+                (Screen::Fail2Ban, icons::BAN, t.nav_fail2ban),
+                (Screen::Journal, icons::HISTORY, t.nav_journal),
+                (Screen::Settings, icons::SETTINGS, t.nav_settings),
             ];
             for (screen, icon, label) in entries {
                 nav_item(ui, p, screen, icon, label, &mut app.screen);
             }
 
-            // En bas : rappel du mode de connexion.
             ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
                 let (col, txt) = match app.phase {
-                    ConnPhase::Connected => (p.success, app.conn_desc.as_str()),
-                    ConnPhase::Connecting => (p.warning, "Connexion…"),
-                    ConnPhase::Disconnected => (p.text_secondary, "Non connecté"),
+                    ConnPhase::Connected => (p.success, app.conn_desc.clone()),
+                    ConnPhase::Connecting => (p.warning, t.status_connecting.to_string()),
+                    ConnPhase::Disconnected => (p.text_secondary, t.status_disconnected.to_string()),
                 };
                 ui.horizontal(|ui| {
                     let (rect, _) = ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
@@ -161,7 +151,7 @@ fn nav_item(ui: &mut egui::Ui, p: &Palette, screen: Screen, icon: &str, label: &
     let bg = if selected { p.card_hover } else { Color32::TRANSPARENT };
     let fg = if selected { p.text } else { p.text_secondary };
     let btn = egui::Button::new(
-        egui::RichText::new(format!("{}  {}", icon, label))
+        RichText::new(format!("{}  {}", icon, label))
             .family(egui::FontFamily::Name("Icon".into()))
             .color(fg)
             .size(15.0),
@@ -174,41 +164,45 @@ fn nav_item(ui: &mut egui::Ui, p: &Palette, screen: Screen, icon: &str, label: &
     }
 }
 
-// --------------------------------------------------------------------- barre d'état
-
+// ─── Barre d'état ────────────────────────────────────────────────────────────
 fn statusbar(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
-    let msg = app.status_msg.clone();
+    let t = app.tr;
     let pending = app.pending.len();
     egui::Panel::bottom("statusbar")
         .exact_size(26.0)
-        .frame(
-            egui::Frame::NONE
-                .fill(p.bg)
-                .inner_margin(Margin{ left: 20, right: 20, top: 4, bottom: 4 }),
-        )
+        .frame(egui::Frame::NONE.fill(p.bg).inner_margin(Margin{ left: 20, right: 20, top: 4, bottom: 4 }))
         .show(ui, |ui| {
             ui.horizontal_centered(|ui| {
                 if pending > 0 {
                     ui.add(egui::Spinner::new().size(11.0));
-                    ui.label(RichText::new(format!("{pending} opération(s) en cours")).size(11.0).color(p.text_secondary));
-                } else if !msg.is_empty() {
+                    ui.label(
+                        RichText::new(t.ops_pending(pending))
+                            .size(11.0)
+                            .color(p.text_secondary),
+                    );
+                } else if !app.status_msg.is_empty() {
                     // Coupe proprement : le texte intégral est dans le toast
-                    // et le journal (la barre ne doit pas déborder).
-                    let short: String = msg.chars().take(110).collect();
-                    let short = if msg.chars().count() > 110 { format!("{short}…") } else { short };
-                    ui.label(RichText::new(short).size(11.0).color(p.text_secondary));
+                    // et le journal.
+                    let msg: String = app.status_msg.chars().take(110).collect();
+                    let msg = if app.status_msg.chars().count() > 110 {
+                        format!("{msg}…")
+                    } else {
+                        msg
+                    };
+                    ui.label(RichText::new(msg).size(11.0).color(p.text_secondary));
                 } else {
-                    ui.label(RichText::new("Prêt").size(11.0).color(p.text_secondary));
+                    ui.label(
+                        RichText::new(t.status_ready)
+                            .size(11.0)
+                            .color(p.text_secondary),
+                    );
                 }
-                // Fraîcheur des données.
                 ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                    if let Some(at) = app.firewall.status_at {
-                        if app.phase == ConnPhase::Connected {
-                            components::since_label(ui, p, at);
-                        }
+                    if let (Some(at), true) = (app.firewall.status_at, app.phase == ConnPhase::Connected) {
+                        components::since_label(ui, p, t, at);
                     }
                     ui.label(
-                        RichText::new("Ctrl+1…5 : écrans · Ctrl+R : actualiser · Ctrl+N : règle")
+                        RichText::new(t.shortcut_hint)
                             .size(10.5)
                             .color(p.text_secondary),
                     );
@@ -216,3 +210,5 @@ fn statusbar(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
             });
         });
 }
+
+use crate::components;

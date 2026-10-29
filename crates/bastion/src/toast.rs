@@ -64,17 +64,16 @@ impl Toasts {
 
     /// Affiche la pile de toasts (bas-droite) et gère l'expiration.
     /// Retourne les actions « Annuler » cliquées.
-    #[allow(deprecated)] // Area::new exige un Id global, pas un IdSalt
-    pub fn show(&mut self, ctx: &egui::Context, p: &Palette) -> Vec<ToastAction> {
+    pub fn show(&mut self, ctx: &egui::Context, p: &Palette, t: &crate::i18n::Tr) -> Vec<ToastAction> {
         // Expiration : succès/info disparaissent après 5 s.
-        for t in &mut self.items {
-            if t.closed {
+        for toast in &mut self.items {
+            if toast.closed {
                 continue;
             }
-            if matches!(t.kind, ToastKind::Success | ToastKind::Info)
-                && t.born.elapsed() >= Duration::from_secs(5)
+            if matches!(toast.kind, ToastKind::Success | ToastKind::Info)
+                && toast.born.elapsed() >= Duration::from_secs(5)
             {
-                t.closed = true;
+                toast.closed = true;
             }
         }
         self.items.retain(|t| !t.closed);
@@ -82,13 +81,13 @@ impl Toasts {
         let mut actions: Vec<ToastAction> = Vec::new();
 
         if !self.items.is_empty() {
-            egui::Area::new(egui::Id::new("toasts"))
+            egui::Area::new(egui::Id::unique("toasts"))
                 .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-16.0, -16.0))
                 .order(egui::Order::Foreground)
                 .interactable(true)
                 .show(ctx, |ui| {
                     for toast in self.items.iter_mut().rev() {
-                        render_toast(ui, p, toast, &mut actions);
+                        render_toast(ui, p, t, toast, &mut actions);
                     }
                 });
             self.items.retain(|t| !t.closed);
@@ -100,6 +99,7 @@ impl Toasts {
 fn render_toast(
     ui: &mut egui::Ui,
     p: &Palette,
+    t: &crate::i18n::Tr,
     toast: &mut Toast,
     actions: &mut Vec<ToastAction>,
 ) {
@@ -133,11 +133,11 @@ fn render_toast(
                 if let Some(action) = toast.action.clone() {
                     if ui
                         .add(egui::Button::new(
-                            egui::RichText::new("Annuler")
+                            egui::RichText::new(t.undo_btn)
                                 .color(p.accent)
                                 .family(egui::FontFamily::Name("Medium".into())),
                         ))
-                        .on_hover_text("Rétablir l'état précédent immédiatement")
+                        .on_hover_text(t.undo_tooltip)
                         .clicked()
                     {
                         actions.push(action);

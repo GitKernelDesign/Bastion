@@ -461,6 +461,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
+name = "bastion"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bastion-core",
+ "eframe",
+ "egui",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "bastion-core"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "nix",
+ "russh",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
 name = "bcrypt-pbkdf"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1819,32 +1845,6 @@ dependencies = [
  "ff",
  "rand_core",
  "subtle",
-]
-
-[[package]]
-name = "gufw"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "eframe",
- "egui",
- "gufw-core",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "gufw-core"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "nix",
- "russh",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "tokio",
 ]
 
 [[package]]
