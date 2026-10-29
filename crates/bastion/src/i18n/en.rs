@@ -93,7 +93,6 @@ pub const TR: Tr = Tr {
     logging_title: "Logging",
     logging_hint: "Blocked packets are visible in the Fail2Ban screen (“Log”).",
     rules_title: "Rules",
-    add_rule_btn: "Add",
     refresh_rules_tooltip: "Refresh rules",
     search_placeholder: "Filter (port, address, comment…)",
     col_action: "Action",

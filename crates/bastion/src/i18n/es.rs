@@ -93,7 +93,6 @@ pub const TR: Tr = Tr {
     logging_title: "Registro",
     logging_hint: "Los bloqueos se consultan en la pantalla Fail2Ban («Registros»).",
     rules_title: "Reglas",
-    add_rule_btn: "Añadir",
     refresh_rules_tooltip: "Actualizar reglas",
     search_placeholder: "Filtrar (puerto, dirección, comentario…)",
     col_action: "Acción",

@@ -1,11 +1,10 @@
-//! Modales : confirmations destructrices, ajout de règle, rapport,
-//! journaux système, validation de la clé de serveur SSH (TOFU).
+//! Modales : confirmations destructrices, rapport, journaux système,
+//! validation de la clé de serveur SSH (TOFU). L'ajout de règle est
+//! inline dans l'écran Pare-feu (pas de popin).
 
 use crate::app::{ConfirmKind, ConnPhase, GuiApp, HostKeyCtx, Modal, Pending};
 use crate::components;
-use crate::i18n::Tr;
 use crate::theme::Palette;
-use bastion_core::model::*;
 use bastion_core::op::{Op, ServiceAction};
 use egui::{Align, Color32, Layout, RichText};
 
@@ -90,108 +89,6 @@ pub fn render(app: &mut GuiApp, ctx: &egui::Context, p: &Palette, modal: Modal) 
             });
             if !close && !backdrop {
                 app.modal = Some(Modal::ResetFw { typed });
-            }
-        }
-
-        Modal::AddRule => {
-            let mut close = false;
-            let t = app.tr;
-            let backdrop = show_modal(ctx, p, "add-rule", t.add_rule_title, 580.0, |ui| {
-                let f = &mut app.add_form;
-
-                ui.horizontal(|ui| {
-                    let mut action = f.action;
-                    components::segmented(
-                        ui,
-                        p,
-                        &[
-                            (RuleAction::Allow, t.action_allow),
-                            (RuleAction::Deny, t.action_deny),
-                            (RuleAction::Reject, t.action_reject),
-                            (RuleAction::Limit, t.action_limit),
-                        ],
-                        &mut action,
-                    );
-                    f.action = action;
-                });
-                ui.horizontal(|ui| {
-                    let mut dir = f.dir;
-                    components::segmented(
-                        ui,
-                        p,
-                        &[(NewRuleDir::In, t.dir_inbound), (NewRuleDir::Out, t.dir_outbound)],
-                        &mut dir,
-                    );
-                    f.dir = dir;
-                });
-                ui.add_space(6.0);
-
-                if app.firewall.profiles.is_empty() {
-                    rule_fields(ui, p, t, f);
-                } else {
-                    ui.checkbox(&mut f.use_profile, t.use_profile_cb);
-                    if f.use_profile {
-                        let sel = f
-                            .profile
-                            .clone()
-                            .unwrap_or_else(|| app.firewall.profiles.first().cloned().unwrap_or_default());
-                        let mut chosen = sel.clone();
-                        egui::ComboBox::from_id_salt("rule-profile")
-                            .selected_text(&sel)
-                            .width(240.0)
-                            .show_ui(ui, |ui| {
-                                for prof in &app.firewall.profiles {
-                                    ui.selectable_value(&mut chosen, prof.clone(), prof);
-                                }
-                            });
-                        f.profile = Some(chosen);
-                    } else {
-                        rule_fields(ui, p, t, f);
-                    }
-                }
-                ui.add_space(4.0);
-
-                if ui
-                    .add(
-                        egui::Button::new(
-                            RichText::new(format!("{}  {}", crate::icons::EXPAND_MORE, t.adv_options))
-                                .size(12.5)
-                                .family(egui::FontFamily::Name("Medium".into())),
-                        ),
-                    )
-                    .clicked()
-                {
-                    f.advanced = !f.advanced;
-                }
-                if f.advanced {
-                    components::field(ui, p, t.field_source, &mut f.from_addr, t.hint_source);
-                    components::field(ui, p, t.field_dest, &mut f.to_addr, t.hint_dest);
-                    components::field(ui, p, t.field_insert, &mut f.insert_at, t.hint_insert);
-                    components::field(ui, p, t.field_comment, &mut f.comment, t.hint_comment);
-                }
-                ui.add_space(6.0);
-
-                let rule_opt = f.to_new_rule().ok();
-                let preview = f.preview(t);
-                ui.label(RichText::new(t.preview_label).size(11.5).color(p.text_secondary));
-                ui.monospace(preview);
-                ui.add_space(10.0);
-                ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                    if ui.add_enabled(rule_opt.is_some(), primary_btn(p, t.btn_add)).clicked() {
-                        if let Some(rule) = rule_opt {
-                            app.send_op(Pending::AddRule, Op::UfwAddRule { rule });
-                        }
-                        close = true;
-                    }
-                    if ui.button(t.cancel_btn).clicked() {
-                        close = true;
-                    }
-                });
-            });
-            if close || backdrop {
-                app.add_form = crate::app::AddRuleForm::default();
-            } else {
-                app.modal = Some(Modal::AddRule);
             }
         }
 
@@ -296,18 +193,6 @@ pub fn render(app: &mut GuiApp, ctx: &egui::Context, p: &Palette, modal: Modal) 
     }
 }
 
-fn rule_fields(ui: &mut egui::Ui, p: &Palette, t: &Tr, f: &mut crate::app::AddRuleForm) {
-    components::field(ui, p, t.field_port_service, &mut f.port, t.hint_port);
-    let mut proto = f.proto;
-    components::segmented(
-        ui,
-        p,
-        &[(Proto::Tcp, t.proto_tcp), (Proto::Udp, t.proto_udp), (Proto::Any, t.proto_any)],
-        &mut proto,
-    );
-    f.proto = proto;
-}
-
 fn apply_confirm(app: &mut GuiApp, kind: &ConfirmKind) {
     match kind {
         ConfirmKind::DisableFw => app.send_op(Pending::Disable, Op::UfwDisable),
@@ -340,13 +225,4 @@ fn danger_btn(p: &Palette, label: &str) -> egui::Button<'static> {
             .family(egui::FontFamily::Name("Medium".into())),
     )
     .fill(p.danger)
-}
-
-fn primary_btn(p: &Palette, label: &str) -> egui::Button<'static> {
-    egui::Button::new(
-        RichText::new(label)
-            .color(Color32::WHITE)
-            .family(egui::FontFamily::Name("Medium".into())),
-    )
-    .fill(p.accent)
 }

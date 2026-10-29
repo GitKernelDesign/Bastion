@@ -93,7 +93,6 @@ pub const TR: Tr = Tr {
     logging_title: "Journalisation",
     logging_hint: "Les blocages sont consultables dans l'écran Fail2Ban (« Journaux »).",
     rules_title: "Règles",
-    add_rule_btn: "Ajouter",
     refresh_rules_tooltip: "Actualiser les règles",
     search_placeholder: "Filtrer (port, adresse, commentaire…)",
     col_action: "Action",

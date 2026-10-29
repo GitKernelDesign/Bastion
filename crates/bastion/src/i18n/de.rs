@@ -93,7 +93,6 @@ pub const TR: Tr = Tr {
     logging_title: "Protokollierung",
     logging_hint: "Blockierungen sind im Fail2Ban-Bereich („Protokoll“) sichtbar.",
     rules_title: "Regeln",
-    add_rule_btn: "Hinzufügen",
     refresh_rules_tooltip: "Regeln aktualisieren",
     search_placeholder: "Filtern (Port, Adresse, Kommentar…)",
     col_action: "Aktion",

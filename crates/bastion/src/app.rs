@@ -72,7 +72,6 @@ pub enum Pending {
 pub enum Modal {
     Confirm(ConfirmData),
     ResetFw { typed: String },
-    AddRule,
     Report(String),
     Logs { title: String, text: String },
     HostKey(HostKeyCtx),
@@ -114,11 +113,6 @@ pub struct FirewallUi {
     /// État systemd du service ufw (« active », « inactive »…).
     pub ufw_service: Option<String>,
     pub ufw_service_at: Option<Instant>,
-    /// Ajout rapide de règle (port/service + options UFW).
-    pub quick_port: String,
-    pub quick_proto: Proto,
-    pub quick_dir: NewRuleDir,
-    pub quick_action: RuleAction,
 }
 
 /// Données de l'écran Fail2Ban.
@@ -174,7 +168,6 @@ pub struct AddRuleForm {
     pub dir: NewRuleDir,
     pub port: String,
     pub proto: Proto,
-    pub advanced: bool,
     pub from_addr: String,
     pub to_addr: String,
     pub insert_at: String,
@@ -190,7 +183,6 @@ impl Default for AddRuleForm {
             dir: NewRuleDir::In,
             port: String::new(),
             proto: Proto::Tcp,
-            advanced: false,
             from_addr: String::new(),
             to_addr: String::new(),
             insert_at: String::new(),
@@ -368,10 +360,6 @@ impl GuiApp {
                 show_raw: false,
                 ufw_service: None,
                 ufw_service_at: None,
-                quick_port: String::new(),
-                quick_proto: Proto::Tcp,
-                quick_dir: NewRuleDir::In,
-                quick_action: RuleAction::Allow,
             },
             f2b: F2bUi {
                 global: None,
@@ -808,12 +796,13 @@ impl GuiApp {
         if refresh && self.phase == ConnPhase::Connected {
             self.refresh_all();
         }
-        if new_rule && self.phase == ConnPhase::Connected && self.screen == Screen::Firewall {
+        if new_rule && self.phase == ConnPhase::Connected {
+            // Le formulaire d'ajout est inline dans l'écran Pare-feu.
+            self.screen = Screen::Firewall;
             self.add_form = AddRuleForm::default();
             if self.firewall.profiles.is_empty() {
                 self.send_op(Pending::RefreshProfiles, Op::UfwAppProfiles);
             }
-            self.modal = Some(Modal::AddRule);
         }
         if let Some(n) = num {
             self.screen = Screen::from_index(n);

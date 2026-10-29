@@ -271,8 +271,7 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     let t = app.tr;
     let n = app.firewall.rules.len();
     let mut refresh_clicked = false;
-    let mut add_clicked = false;
-    let mut quick_add = false;
+    let mut submit = false;
 
     components::card(
         ui,
@@ -282,59 +281,62 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
             if components::icon_button(ui, p, crate::icons::REFRESH, t.refresh_rules_tooltip).clicked() {
                 refresh_clicked = true;
             }
-            if components::primary_button_small(ui, p, crate::icons::ADD, t.add_rule_btn).clicked() {
-                add_clicked = true;
-            }
         },
         |ui| {
-            // Ajout rapide : port ou service, puis les options UFW empilées
-            // verticalement (protocole, direction, action) — jamais trop large.
+            // ── Formulaire d'ajout de règle, inline (pas de popin) ──
+            ui.label(
+                RichText::new(t.add_rule_title)
+                    .size(13.0)
+                    .family(egui::FontFamily::Name("SemiBold".into())),
+            );
+            ui.add_space(4.0);
+            ui.label(RichText::new(t.field_port_service).size(12.0).color(p.text_secondary));
             ui.horizontal(|ui| {
                 let resp = ui.add(
-                    egui::TextEdit::singleline(&mut app.firewall.quick_port)
+                    egui::TextEdit::singleline(&mut app.add_form.port)
                         .hint_text(t.hint_port)
                         .desired_width((ui.available_width() - 130.0).max(160.0))
                         .font(egui::TextStyle::Monospace),
                 );
                 if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    quick_add = true;
+                    submit = true;
                 }
                 if components::primary_button_small(ui, p, crate::icons::ADD, t.btn_add)
                     .on_hover_text(t.hint_port)
                     .clicked()
                 {
-                    quick_add = true;
+                    submit = true;
                 }
             });
             ui.add_space(4.0);
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(10.0, 8.0);
                 ui.label(RichText::new(t.proto_label).size(12.0).color(p.text_secondary));
-                let mut proto = app.firewall.quick_proto;
+                let mut proto = app.add_form.proto;
                 components::segmented(
                     ui,
                     p,
                     &[(Proto::Tcp, t.proto_tcp), (Proto::Udp, t.proto_udp), (Proto::Any, t.proto_any)],
                     &mut proto,
                 );
-                app.firewall.quick_proto = proto;
+                app.add_form.proto = proto;
             });
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(10.0, 8.0);
                 ui.label(RichText::new(t.dir_label).size(12.0).color(p.text_secondary));
-                let mut dir = app.firewall.quick_dir;
+                let mut dir = app.add_form.dir;
                 components::segmented(
                     ui,
                     p,
                     &[(NewRuleDir::In, t.dir_inbound), (NewRuleDir::Out, t.dir_outbound)],
                     &mut dir,
                 );
-                app.firewall.quick_dir = dir;
+                app.add_form.dir = dir;
             });
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(10.0, 8.0);
                 ui.label(RichText::new(t.action_label).size(12.0).color(p.text_secondary));
-                let mut action = app.firewall.quick_action;
+                let mut action = app.add_form.action;
                 components::segmented(
                     ui,
                     p,
@@ -346,9 +348,55 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                     ],
                     &mut action,
                 );
-                app.firewall.quick_action = action;
+                app.add_form.action = action;
             });
-            ui.add_space(8.0);
+            ui.add_space(4.0);
+
+            // Profil d'application UFW, s'il y en a.
+            if !app.firewall.profiles.is_empty() {
+                ui.checkbox(&mut app.add_form.use_profile, t.use_profile_cb);
+                if app.add_form.use_profile {
+                    let sel = app
+                        .add_form
+                        .profile
+                        .clone()
+                        .unwrap_or_else(|| app.firewall.profiles.first().cloned().unwrap_or_default());
+                    let mut chosen = sel.clone();
+                    egui::ComboBox::from_id_salt("rule-profile")
+                        .selected_text(&sel)
+                        .width(240.0)
+                        .show_ui(ui, |ui| {
+                            for prof in &app.firewall.profiles {
+                                ui.selectable_value(&mut chosen, prof.clone(), prof);
+                            }
+                        });
+                    app.add_form.profile = Some(chosen);
+                }
+            }
+
+            // Options avancées repliables.
+            egui::CollapsingHeader::new(
+                RichText::new(format!("{}  {}", crate::icons::EXPAND_MORE, t.adv_options))
+                    .size(12.5)
+                    .family(egui::FontFamily::Name("Medium".into())),
+            )
+            .id_salt("rule-adv")
+            .show(ui, |ui| {
+                let f = &mut app.add_form;
+                components::field(ui, p, t.field_source, &mut f.from_addr, t.hint_source);
+                components::field(ui, p, t.field_dest, &mut f.to_addr, t.hint_dest);
+                components::field(ui, p, t.field_insert, &mut f.insert_at, t.hint_insert);
+                components::field(ui, p, t.field_comment, &mut f.comment, t.hint_comment);
+            });
+            ui.add_space(6.0);
+
+            // Aperçu de la commande.
+            let preview = app.add_form.preview(t);
+            ui.label(RichText::new(t.preview_label).size(11.5).color(p.text_secondary));
+            ui.label(RichText::new(ellipsize(&preview, 110)).monospace())
+                .on_hover_text(&preview);
+            ui.add_space(10.0);
+
             ui.horizontal(|ui| {
                 ui.label(crate::icons::icon(crate::icons::SEARCH));
                 ui.add(
@@ -386,9 +434,9 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 .cloned()
                 .collect();
 
-            // Hauteur doublée : au moins 12 règles visibles, jusqu'à ~30
+            // Hauteur généreuse : au moins 20 règles visibles, jusqu'à ~50
             // selon le nombre de règles filtrées.
-            let list_h = (30.0 + 30.0 * rules.len() as f32).clamp(420.0, 900.0);
+            let list_h = (30.0 + 30.0 * rules.len() as f32).clamp(630.0, 1530.0);
             egui::ScrollArea::vertical()
                 .max_height(list_h)
                 .auto_shrink([false, false])
@@ -470,19 +518,10 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     if refresh_clicked {
         app.send_op(Pending::RefreshRules, Op::UfwRules);
     }
-    if quick_add {
-        // Validation identique au formulaire complet (port, plage, liste,
-        // nom de service, « port/proto »…).
-        let form = crate::app::AddRuleForm {
-            action: app.firewall.quick_action,
-            dir: app.firewall.quick_dir,
-            port: app.firewall.quick_port.trim().to_string(),
-            proto: app.firewall.quick_proto,
-            ..Default::default()
-        };
-        match form.to_new_rule() {
+    if submit {
+        match app.add_form.to_new_rule() {
             Ok(rule) => {
-                app.firewall.quick_port.clear();
+                app.add_form = crate::app::AddRuleForm::default();
                 app.send_op(Pending::AddRule, Op::UfwAddRule { rule });
             }
             Err(e) => {
@@ -491,13 +530,6 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 app.toasts.error(msg);
             }
         }
-    }
-    if add_clicked {
-        app.add_form = crate::app::AddRuleForm::default();
-        if app.firewall.profiles.is_empty() {
-            app.send_op(Pending::RefreshProfiles, Op::UfwAppProfiles);
-        }
-        app.modal = Some(Modal::AddRule);
     }
 }
 

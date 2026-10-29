@@ -176,7 +176,6 @@ pub struct Tr {
     pub logging_title: &'static str,
     pub logging_hint: &'static str,
     pub rules_title: &'static str,
-    pub add_rule_btn: &'static str,
     pub refresh_rules_tooltip: &'static str,
     pub search_placeholder: &'static str,
     pub col_action: &'static str,
