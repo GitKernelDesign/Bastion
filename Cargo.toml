@@ -1,0 +1,29 @@
+[workspace]
+resolver = "2"
+members = ["crates/gufw-core", "crates/gufw"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+description = "Interface graphique sobre et élégante pour gérer UFW et Fail2Ban, en local ou via SSH"
+license = "MIT"
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "process", "time", "io-util", "sync"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+async-trait = "0.1"
+thiserror = "2"
+nix = { version = "0.31", features = ["net", "user", "fs", "process"] }
+russh = "0.46"
+eframe = "0.37"
+egui = "0.37"
+
+[profile.release]
+opt-level = 2
+lto = "thin"
+strip = true
+codegen-units = 1
+
+[profile.dev]
+opt-level = 1

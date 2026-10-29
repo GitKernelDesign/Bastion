@@ -1,0 +1,12 @@
+#!/bin/sh
+# AppRun de GUFW (AppImage type 2).
+# Place le binaire au premier plan et exporte l'environnement minimal.
+
+APPDIR="$(dirname "$(readlink -f "$0")")"
+export APPDIR
+export PATH="$APPDIR/usr/bin:$PATH"
+
+# Les locales du système sont utilisées telles quelles ; pas de dépendance
+# embarquée supplémentaire nécessaire.
+
+exec "$APPDIR/usr/bin/gufw" "$@"
