@@ -186,21 +186,6 @@ pub fn card_body<R>(ui: &mut Ui, p: &Palette, body: impl FnOnce(&mut Ui) -> R) -
     })
 }
 
-/// Carte sans en-tête, à largeur imposée. À utiliser dans une rangée
-/// horizontale : `set_min_width(available)` y ferait déborder la carte
-/// hors de la fenêtre.
-pub fn card_body_w<R>(
-    ui: &mut Ui,
-    p: &Palette,
-    width: f32,
-    body: impl FnOnce(&mut Ui) -> R,
-) -> R {
-    card_frame(ui, p, |ui| {
-        ui.set_min_width(width);
-        body(ui)
-    })
-}
-
 /// Interrupteur à bascule (52×28 px, animé, anneau au survol).
 pub fn switch(ui: &mut Ui, p: &Palette, on: bool, accent: Option<Color32>) -> bool {
     let id = ui.scope_id().with("switch");

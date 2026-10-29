@@ -18,16 +18,10 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
         return;
     }
 
-    egui::ScrollArea::horizontal()
-        .id_salt("f2b-top-cards")
-        .auto_shrink([false, true])
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing = egui::vec2(12.0, 12.0);
-                service_card(app, ui, p);
-                summary_card(app, ui, p);
-            });
-        });
+    // Toutes les cartes empilées verticalement, en pleine largeur.
+    service_card(app, ui, p);
+    ui.add_space(12.0);
+    summary_card(app, ui, p);
     ui.add_space(12.0);
     jails_card(app, ui, p);
     if let Some(jail) = app.f2b.selected_jail.clone() {
@@ -39,7 +33,7 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
 // ─── Carte service ───────────────────────────────────────────────────────────
 fn service_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     let t = app.tr;
-    components::card_body_w(ui, p, 310.0, |ui| {
+    components::card_body(ui, p, |ui| {
         let state = app.f2b.service.clone().unwrap_or_else(|| t.state_unknown.to_string());
         let active = state == "active";
         let color = if active {
@@ -100,7 +94,7 @@ fn service_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
 // ─── Carte synthèse ──────────────────────────────────────────────────────────
 fn summary_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     let t = app.tr;
-    components::card_body_w(ui, p, 220.0, |ui| {
+    components::card_body(ui, p, |ui| {
         let (jails, banned) = match &app.f2b.global {
             Some(g) => {
                 let b: u64 = g

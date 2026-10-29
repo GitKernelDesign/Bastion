@@ -379,8 +379,11 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 .cloned()
                 .collect();
 
+            // Hauteur : au moins 6 règles visibles, et jusqu'à ~14 selon
+            // le nombre de règles filtrées.
+            let list_h = (30.0 + 30.0 * rules.len() as f32).clamp(210.0, 450.0);
             egui::ScrollArea::vertical()
-                .max_height(320.0)
+                .max_height(list_h)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     egui::Grid::new("rules-table")
