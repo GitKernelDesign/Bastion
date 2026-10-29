@@ -52,35 +52,38 @@ pub fn install(ctx: &egui::Context) {
     );
 
     // Familles par défaut : la police embarquée passe en tête, la police
-    // système d'egui reste en repli (symboles manquants…).
-    fonts
-        .families
-        .entry(FontFamily::Proportional)
-        .or_default()
-        .insert(0, "plex_sans".into());
+    // système d'egui reste en repli (symboles manquants…). Material Icons
+    // termine la liste : egui choisit la police par glyphe, ce qui permet
+    // d'insérer une icône au milieu d'un texte.
+    let prop = fonts.families.entry(FontFamily::Proportional).or_default();
+    prop.insert(0, "plex_sans".into());
+    prop.push("material_icons".into());
     fonts
         .families
         .entry(FontFamily::Monospace)
         .or_default()
         .insert(0, "plex_mono".into());
 
-    // Graisses et familles spéciales.
-    fonts.families.insert(
-        FontFamily::Name("Medium".into()),
-        vec!["plex_sans_medium".into()],
-    );
-    fonts.families.insert(
-        FontFamily::Name("SemiBold".into()),
-        vec!["plex_sans_semibold".into()],
-    );
-    fonts.families.insert(
-        FontFamily::Name("Bold".into()),
-        vec!["plex_sans_bold".into()],
-    );
+    // Graisses : police principale + repli regular (glyphe manquant) puis
+    // icônes (mixage icône + libellé dans un même texte).
+    let weight = |fonts: &mut FontDefinitions, family: &str, main: &str, fallback: &str| {
+        fonts.families.insert(
+            FontFamily::Name(family.into()),
+            vec![main.into(), fallback.into(), "material_icons".into()],
+        );
+    };
+    weight(&mut fonts, "Medium", "plex_sans_medium", "plex_sans");
+    weight(&mut fonts, "SemiBold", "plex_sans_semibold", "plex_sans");
+    weight(&mut fonts, "Bold", "plex_sans_bold", "plex_sans");
     fonts.families.insert(
         FontFamily::Name("MonoMedium".into()),
-        vec!["plex_mono_medium".into()],
+        vec![
+            "plex_mono_medium".into(),
+            "plex_mono".into(),
+            "material_icons".into(),
+        ],
     );
+    // Famille « Icon » : uniquement des icônes (aucun texte latin).
     fonts.families.insert(
         FontFamily::Name("Icon".into()),
         vec!["material_icons".into()],

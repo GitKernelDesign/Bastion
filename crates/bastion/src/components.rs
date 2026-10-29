@@ -177,7 +177,7 @@ pub fn primary_button_small(ui: &mut Ui, p: &Palette, icon: &str, label: &str) -
             RichText::new(format!("{}  {}", icon, label))
                 .color(Color32::WHITE)
                 .size(13.5)
-                .family(egui::FontFamily::Name("Icon".into())),
+                .family(egui::FontFamily::Name("Medium".into())),
         )
         .fill(p.accent),
     )
@@ -205,9 +205,11 @@ pub fn icon_button(ui: &mut Ui, _p: &Palette, icon: &str, tooltip: &str) -> egui
 }
 
 /// Texte riche combinant icône et libellé (pour boutons).
+/// L'icône est résolue par repli de police (Material Icons en fin de liste) ;
+/// le libellé utilise la police texte.
 pub fn btn_icon_text(icon: &str, label: &str) -> RichText {
     RichText::new(format!("{}  {}", icon, label))
-        .family(egui::FontFamily::Name("Icon".into()))
+        .family(egui::FontFamily::Name("Medium".into()))
 }
 
 /// Libellé de champ + saisie monoligne.

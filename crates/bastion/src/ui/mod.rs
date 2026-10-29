@@ -152,7 +152,7 @@ fn nav_item(ui: &mut egui::Ui, p: &Palette, screen: Screen, icon: &str, label: &
     let fg = if selected { p.text } else { p.text_secondary };
     let btn = egui::Button::new(
         RichText::new(format!("{}  {}", icon, label))
-            .family(egui::FontFamily::Name("Icon".into()))
+            .family(egui::FontFamily::Name("Medium".into()))
             .color(fg)
             .size(15.0),
     )

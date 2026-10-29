@@ -151,7 +151,7 @@ pub fn render(app: &mut GuiApp, ctx: &egui::Context, p: &Palette, modal: Modal) 
                         egui::Button::new(
                             RichText::new(format!("{}  {}", crate::icons::EXPAND_MORE, t.adv_options))
                                 .size(12.5)
-                                .family(egui::FontFamily::Name("Icon".into())),
+                                .family(egui::FontFamily::Name("Medium".into())),
                         ),
                     )
                     .clicked()
