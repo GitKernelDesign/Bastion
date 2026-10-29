@@ -41,7 +41,7 @@ fn topbar(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     let t = app.tr;
     egui::Panel::top("topbar")
         .exact_size(52.0)
-        .frame(egui::Frame::NONE.fill(p.bg).inner_margin(Margin{ left: 20, right: 20, top: 8, bottom: 8 }))
+        .frame(egui::Frame::NONE.fill(p.bg_alt).inner_margin(Margin{ left: 20, right: 20, top: 8, bottom: 8 }))
         .show(ui, |ui| {
             ui.horizontal_centered(|ui| {
                 let (color, dot_icon, label) = match app.phase {
@@ -94,7 +94,7 @@ fn sidebar(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     let t = app.tr;
     egui::Panel::left("nav")
         .exact_size(216.0)
-        .frame(egui::Frame::NONE.fill(p.bg).inner_margin(Margin::same(12)))
+        .frame(egui::Frame::NONE.fill(p.bg_alt).inner_margin(Margin::same(12)))
         .show(ui, |ui| {
             ui.add_space(6.0);
 
@@ -113,7 +113,8 @@ fn sidebar(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                     );
                 });
             });
-            ui.add_space(16.0);
+            ui.add_space(14.0);
+            ui.spacing_mut().item_spacing = egui::vec2(8.0, 4.0);
 
             let entries = [
                 (Screen::Connect, icons::LOGIN, t.nav_connect),
@@ -122,9 +123,7 @@ fn sidebar(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 (Screen::Journal, icons::HISTORY, t.nav_journal),
                 (Screen::Settings, icons::SETTINGS, t.nav_settings),
             ];
-            for (screen, icon, label) in entries {
-                nav_item(ui, p, screen, icon, label, &mut app.screen);
-            }
+            let _ = nav_list(ui, p, &entries, &mut app.screen);
 
             ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
                 let (col, txt) = match app.phase {
@@ -146,7 +145,7 @@ fn sidebar(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
         });
 }
 
-fn nav_item(ui: &mut egui::Ui, p: &Palette, screen: Screen, icon: &str, label: &str, current: &mut Screen) {
+fn nav_item(ui: &mut egui::Ui, p: &Palette, screen: Screen, icon: &str, label: &str, current: &mut Screen) -> egui::Rect {
     let selected = *current == screen;
     let width = ui.available_width();
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, 38.0), egui::Sense::click());
@@ -188,6 +187,7 @@ fn nav_item(ui: &mut egui::Ui, p: &Palette, screen: Screen, icon: &str, label: &
     if resp.clicked() {
         *current = screen;
     }
+    rect
 }
 
 // ─── Barre d'état ────────────────────────────────────────────────────────────
@@ -196,7 +196,7 @@ fn statusbar(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     let pending = app.pending.len();
     egui::Panel::bottom("statusbar")
         .exact_size(26.0)
-        .frame(egui::Frame::NONE.fill(p.bg).inner_margin(Margin{ left: 20, right: 20, top: 4, bottom: 4 }))
+        .frame(egui::Frame::NONE.fill(p.bg_alt).inner_margin(Margin{ left: 20, right: 20, top: 4, bottom: 4 }))
         .show(ui, |ui| {
             ui.horizontal_centered(|ui| {
                 if pending > 0 {
@@ -238,3 +238,80 @@ fn statusbar(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
 }
 
 use crate::components;
+/// Liste de navigation verticale (extraite pour être testable).
+fn nav_list(
+    ui: &mut egui::Ui,
+    p: &Palette,
+    entries: &[(Screen, &str, &str)],
+    current: &mut Screen,
+) -> Vec<egui::Rect> {
+    ui.spacing_mut().item_spacing = egui::vec2(8.0, 4.0);
+    entries
+        .iter()
+        .map(|(screen, icon, label)| nav_item(ui, p, *screen, icon, label, current))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::ThemeKind;
+
+    /// Les items de navigation doivent s'empiler verticalement et rester
+    /// dans les limites de l'écran, quelle que soit la largeur de fenêtre.
+    #[test]
+    fn nav_items_empiles_dans_l_ecran() {
+        let ctx = egui::Context::default();
+        crate::fonts::install(&ctx);
+        let p = Palette::new(ThemeKind::Dark);
+        let entries = [
+            (Screen::Connect, icons::LOGIN, "Connexion"),
+            (Screen::Firewall, icons::SECURITY, "Pare-feu"),
+            (Screen::Fail2Ban, icons::BAN, "Fail2Ban"),
+            (Screen::Journal, icons::HISTORY, "Journal"),
+            (Screen::Settings, icons::SETTINGS, "Réglages"),
+        ];
+        for w in [1280.0, 900.0, 640.0] {
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w, 720.0));
+            let input = egui::RawInput {
+                screen_rect: Some(screen),
+                ..Default::default()
+            };
+            let mut current = Screen::Firewall;
+            ctx.begin_pass(input);
+            let rects = ctx.root_ui(|ui| {
+                egui::Panel::left("nav")
+                    .exact_size(216.0)
+                    .frame(egui::Frame::NONE.fill(p.bg_alt).inner_margin(Margin::same(12)))
+                    .show(ui, |ui| {
+                        ui.add_space(6.0);
+                        ui.add_space(14.0);
+                        nav_list(ui, &p, &entries, &mut current)
+                    })
+                    .inner
+            });
+            let mut output = ctx.end_pass();
+            output.textures_delta.clear();
+            // Toutes les formes peintes restent dans l'écran.
+            for cs in &output.shapes {
+                let r = cs.shape.visual_bounding_rect();
+                assert!(
+                    r.left() >= -1.0
+                        && r.right() <= screen.width() + 1.0
+                        && r.top() >= -1.0
+                        && r.bottom() <= screen.height() + 1.0,
+                    "forme hors écran (largeur {w}) : {r:?}"
+                );
+            }
+            // 5 items de 38 px empilés verticalement, sans chevauchement.
+            assert_eq!(rects.len(), 5, "5 items attendus (largeur {w})");
+            for r in &rects {
+                assert!((r.height() - 38.0).abs() < 0.5, "hauteur item : {r:?}");
+                assert!(r.left() >= -1.0 && r.right() <= screen.width() + 1.0, "item hors écran : {r:?}");
+            }
+            for pair in rects.windows(2) {
+                assert!(pair[1].top() >= pair[0].bottom() - 0.5, "chevauchement : {rects:?}");
+            }
+        }
+    }
+}

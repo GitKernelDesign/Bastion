@@ -8,6 +8,9 @@ use egui::{Color32, Context, FontId, Style, TextStyle};
 pub struct Palette {
     pub dark: bool,
     pub bg: Color32,
+    /// Fond des barres (latérale, haute, basse) : ton légèrement décalé
+    /// pour un rendu en couches, plus moderne.
+    pub bg_alt: Color32,
     pub card: Color32,
     pub card_hover: Color32,
     pub border: Color32,
@@ -25,32 +28,34 @@ impl Palette {
         if kind == ThemeKind::Light {
             Palette {
                 dark: false,
-                bg: hex("#F4F5F7"),
+                bg: hex("#F3F5FA"),
+                bg_alt: hex("#FBFCFE"),
                 card: hex("#FFFFFF"),
-                card_hover: hex("#EDEFF3"),
-                border: hex("#DDE0E6"),
-                text: hex("#20242A"),
-                text_secondary: hex("#6B7280"),
-                accent: hex("#2F6FE4"),
-                success: hex("#268A52"),
-                warning: hex("#B8860B"),
-                danger: hex("#D33B3F"),
-                row_alt: hex("#F0F2F5"),
+                card_hover: hex("#EDF0F8"),
+                border: hex("#E4E7F0"),
+                text: hex("#171B26"),
+                text_secondary: hex("#646E84"),
+                accent: hex("#4F46E5"),
+                success: hex("#059669"),
+                warning: hex("#D97706"),
+                danger: hex("#E11D48"),
+                row_alt: hex("#F1F4FA"),
             }
         } else {
             Palette {
                 dark: true,
-                bg: hex("#15161A"),
-                card: hex("#1E2026"),
-                card_hover: hex("#272A31"),
-                border: hex("#2A2D35"),
-                text: hex("#E8EAED"),
-                text_secondary: hex("#9AA0AA"),
-                accent: hex("#4C8DFF"),
-                success: hex("#3FB96F"),
-                warning: hex("#E5A13C"),
-                danger: hex("#E5484D"),
-                row_alt: hex("#22242B"),
+                bg: hex("#0E1016"),
+                bg_alt: hex("#141824"),
+                card: hex("#171C28"),
+                card_hover: hex("#202636"),
+                border: hex("#262D3F"),
+                text: hex("#E9ECF4"),
+                text_secondary: hex("#8E97AB"),
+                accent: hex("#7C8CFF"),
+                success: hex("#34D399"),
+                warning: hex("#FBBF24"),
+                danger: hex("#FB7185"),
+                row_alt: hex("#141A26"),
             }
         }
     }
@@ -112,7 +117,7 @@ pub fn apply(ctx: &Context, kind: ThemeKind, font_scale: f32) -> Palette {
     v.widgets.active.corner_radius = r;
     v.widgets.open.corner_radius = r;
     v.menu_corner_radius = egui::CornerRadius::same(10);
-    v.window_corner_radius = egui::CornerRadius::same(12);
+    v.window_corner_radius = egui::CornerRadius::same(14);
 
     style.visuals = v;
 

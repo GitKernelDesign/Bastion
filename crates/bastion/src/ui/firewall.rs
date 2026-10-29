@@ -21,7 +21,7 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     // les largeurs sont imposées, la rangée ne déborde jamais.
     egui::ScrollArea::horizontal()
         .id_salt("fw-top-cards")
-        .auto_shrink([false, false])
+        .auto_shrink([false, true])
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(12.0, 12.0);

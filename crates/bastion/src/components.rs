@@ -118,6 +118,21 @@ pub fn styled_button(ui: &mut Ui, p: &Palette, label: &str, kind: BtnKind) -> eg
         );
     }
     ui.painter().rect(rect, radius, fill, stroke, StrokeKind::Inside);
+    // Reflet très discret sur la moitié supérieure des boutons pleins.
+    if !matches!(kind, BtnKind::Ghost | BtnKind::Soft) {
+        let sheen = egui::Rect::from_min_size(
+            rect.left_top(),
+            egui::vec2(rect.width(), (rect.height() * 0.5).max(1.0)),
+        );
+        let top = egui::CornerRadius { nw: 10, ne: 10, sw: 0, se: 0 };
+        ui.painter().rect(
+            sheen,
+            top,
+            Color32::from_white_alpha(if p.dark { 12 } else { 16 }),
+            Stroke::NONE,
+            StrokeKind::Inside,
+        );
+    }
     let tp = rect.center() - galley.size() * 0.5;
     ui.painter().galley(tp, galley, text_color);
     resp
@@ -156,7 +171,7 @@ fn card_frame<R>(ui: &mut Ui, p: &Palette, body: impl FnOnce(&mut Ui) -> R) -> R
     Frame::NONE
         .fill(p.card)
         .stroke(egui::Stroke::new(1.0, p.border))
-        .corner_radius(CornerRadius::same(12))
+        .corner_radius(CornerRadius::same(14))
         .inner_margin(Margin::same(16))
         .shadow(soft_shadow(if p.dark { 55 } else { 20 }))
         .show(ui, body)
@@ -458,7 +473,7 @@ pub fn modal_frame(p: &Palette) -> egui::Frame {
     Frame::NONE
         .fill(p.card)
         .stroke(egui::Stroke::new(1.0, p.border))
-        .corner_radius(CornerRadius::same(12))
+        .corner_radius(CornerRadius::same(14))
         .inner_margin(Margin::same(18))
 }
 

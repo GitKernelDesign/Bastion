@@ -18,11 +18,16 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
         return;
     }
 
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing = egui::vec2(12.0, 12.0);
-        service_card(app, ui, p);
-        summary_card(app, ui, p);
-    });
+    egui::ScrollArea::horizontal()
+        .id_salt("f2b-top-cards")
+        .auto_shrink([false, true])
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(12.0, 12.0);
+                service_card(app, ui, p);
+                summary_card(app, ui, p);
+            });
+        });
     ui.add_space(12.0);
     jails_card(app, ui, p);
     if let Some(jail) = app.f2b.selected_jail.clone() {
