@@ -36,6 +36,7 @@ pub struct LogEntry {
 }
 
 /// Événements remontés à l'interface.
+#[derive(Debug)]
 pub enum Event {
     Connected { desc: String },
     ConnectFailed { reason: String },
@@ -297,4 +298,128 @@ async fn finish_connect(
 pub async fn reconnect_helper() -> Result<HelperTransport, CoreError> {
     let socket = socket_path_for(nix_euid());
     HelperTransport::connect(&socket).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    /// Reçoit le prochain événement (sondage, comme l'UI).
+    fn recv_with_timeout(h: &WorkerHandle, secs: u64) -> Option<Event> {
+        let deadline = Instant::now() + Duration::from_secs(secs);
+        while Instant::now() < deadline {
+            for ev in h.poll() {
+                return Some(ev);
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        None
+    }
+
+    fn skip_if_no_binary() -> Option<PathBuf> {
+        match std::env::var("CARGO_BIN_EXE_gufw") {
+            Ok(exe) => Some(PathBuf::from(exe)),
+            Err(_) => {
+                eprintln!("CARGO_BIN_EXE_gufw absent : test ignoré");
+                None
+            }
+        }
+    }
+
+    fn current_uid() -> u32 {
+        std::fs::read_to_string("/proc/self/status")
+            .ok()
+            .and_then(|s| {
+                s.lines().find_map(|l| {
+                    l.strip_prefix("Uid:")
+                        .map(|r| r.split_whitespace().next().unwrap_or("0").to_string())
+                })
+            })
+            .and_then(|u| u.parse().ok())
+            .unwrap_or(1000)
+    }
+
+    #[test]
+    fn sonde_outils_locaux() {
+        let h = WorkerHandle::spawn();
+        h.send(Job::ProbeLocalTools);
+        match recv_with_timeout(&h, 15) {
+            Some(Event::ProbeLocalTools { ufw, fail2ban }) => {
+                let ufw = ufw.expect("ufw non détecté");
+                assert!(ufw.contains("ufw"), "version ufw inattendue : {ufw}");
+                let f2b = fail2ban.expect("fail2ban non détecté");
+                assert!(
+                    f2b.to_lowercase().contains("fail2ban"),
+                    "version fail2ban inattendue : {f2b}"
+                );
+            }
+            other => panic!("aucun événement probe reçu : {other:?}"),
+        }
+    }
+
+    #[test]
+    fn connexion_locale_avec_helper_deja_actif() {
+        let Some(exe) = skip_if_no_binary() else { return };
+
+        // Démarre le helper manuellement (rôle joué par pkexec en réel).
+        let socket = std::env::temp_dir().join(format!("gufw-wt-{}.sock", std::process::id()));
+        let _ = std::fs::remove_file(&socket);
+        let mut helper = std::process::Command::new(&exe)
+            .arg("--serve")
+            .arg("--socket")
+            .arg(&socket)
+            .arg("--uid")
+            .arg(current_uid().to_string())
+            .arg("--idle")
+            .arg("60")
+            .spawn()
+            .expect("lancement du helper");
+        std::thread::sleep(Duration::from_millis(600));
+
+        let h = WorkerHandle::spawn();
+        h.send(Job::ConnectLocal { app_exe: exe.clone() });
+
+        let desc = match recv_with_timeout(&h, 20) {
+            Some(Event::Connected { desc }) => desc,
+            other => panic!("connexion non établie : {other:?}"),
+        };
+        assert!(desc.contains("Local"), "description : {desc}");
+
+        // Une opération root en user doit produire une ERREUR propre et
+        // visible (propagation du stderr système).
+        h.send(Job::Op {
+            id: 42,
+            op: gufw_core::op::Op::UfwStatus,
+        });
+        match recv_with_timeout(&h, 15) {
+            Some(Event::OpDone { id, result }) => {
+                assert_eq!(id, 42);
+                let err = result.expect_err("ufw status devrait échouer hors root");
+                let msg = err.to_string();
+                assert!(
+                    msg.contains("root") || msg.contains("code"),
+                    "erreur inattendue : {msg}"
+                );
+            }
+            other => panic!("aucun OpDone reçu : {other:?}"),
+        }
+
+        // Journal : la commande exécutée doit avoir été enregistrée.
+        match recv_with_timeout(&h, 5) {
+            Some(Event::Log(entry)) => {
+                assert!(entry.command.contains("status"));
+            }
+            other => panic!("journalisation absente : {other:?}"),
+        }
+
+        h.send(Job::Disconnect);
+        match recv_with_timeout(&h, 10) {
+            Some(Event::Disconnected { .. }) => {}
+            other => panic!("déconnexion non confirmée : {other:?}"),
+        }
+
+        helper.kill().ok();
+        let _ = std::fs::remove_file(&socket);
+    }
 }

@@ -20,6 +20,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 fn main() {
+    install_panic_hook();
     let args: Vec<String> = std::env::args().collect();
 
     if args.iter().any(|a| a == "--version" || a == "-V") {
@@ -33,6 +34,32 @@ fn main() {
     }
 
     launch_gui();
+}
+
+/// Journalise toute panique dans ~/.config/gufw/panic.log : une panique dans
+/// une tâche asynchrone est silencieuse sinon (tokio l'attrape), et l'app
+/// paraît simplement « ne rien faire ».
+fn install_panic_hook() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let dir = config::AppConfig::config_dir();
+        let _ = std::fs::create_dir_all(&dir);
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let line = format!(
+            "[epoch {stamp}] panique dans le thread {:?} : {info}\n---\n",
+            std::thread::current().name().unwrap_or("<anonyme>")
+        );
+        use std::io::Write;
+        let _ = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(dir.join("panic.log"))
+            .and_then(|mut f| f.write_all(line.as_bytes()));
+        default_hook(info);
+    }));
 }
 
 /// Mode assistant root : écoute la socket, exécute la liste blanche,

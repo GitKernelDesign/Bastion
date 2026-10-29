@@ -85,6 +85,11 @@ pub fn run_helper_server(socket: &Path, allowed_uid: u32, idle_timeout: std::tim
     }
 
     let listener = UnixListener::bind(socket).map_err(|e| format!("bind {} : {e}", socket.display()))?;
+    // Accept non bloquant : la boucle surveille aussi l'inactivité
+    // (un accept bloquant empêcherait tout arrêt automatique).
+    listener
+        .set_nonblocking(true)
+        .map_err(|e| format!("nonblocking : {e}"))?;
 
     // Permissions strictes : utilisateur seul + root.
     let _ = std::fs::set_permissions(socket, std::fs::Permissions::from_mode(0o600));
@@ -96,9 +101,13 @@ pub fn run_helper_server(socket: &Path, allowed_uid: u32, idle_timeout: std::tim
 
     let deadline = Arc::new(std::sync::Mutex::new(std::time::Instant::now() + idle_timeout));
 
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => {
+    loop {
+        // Arrêt après inactivité prolongée.
+        if std::time::Instant::now() > *deadline.lock().unwrap() {
+            break;
+        }
+        match listener.accept() {
+            Ok((stream, _)) => {
                 let deadline = deadline.clone();
                 // Vérifie l'identité du pair (SO_PEERCRED).
                 let cred = nix::sys::socket::getsockopt(
@@ -114,11 +123,12 @@ pub fn run_helper_server(socket: &Path, allowed_uid: u32, idle_timeout: std::tim
                     let _ = serve_connection(stream);
                 });
             }
-            Err(_) => continue,
-        }
-        // Arrêt sur inactivité.
-        if std::time::Instant::now() > *deadline.lock().unwrap() {
-            break;
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(std::time::Duration::from_millis(250));
+            }
+            Err(_) => {
+                std::thread::sleep(std::time::Duration::from_millis(250));
+            }
         }
     }
 
@@ -228,6 +238,7 @@ fn handle_request(req: &HelperRequest) -> HelperResponse {
 // ---------------------------------------------------------------------------
 
 /// Transport parlant au helper local.
+#[derive(Debug)]
 pub struct HelperTransport {
     socket: PathBuf,
     stream: tokio::sync::Mutex<tokio::net::UnixStream>,
@@ -352,6 +363,15 @@ pub async fn ping_helper(socket: &Path) -> bool {
 ///
 /// `app_exe` : chemin du binaire de l'application (lui-même sert de helper).
 /// Retourne un transport prêt.
+///
+/// Deux points critiques :
+/// 1. Le binaire courant peut vivre dans un montage FUSE volatile
+///    (AppImage : /tmp/.mount_*) que root ne peut pas parcourir — pkexec
+///    échouerait avec « Permission denied ». On le copie donc dans un
+///    emplacement stable appartenant à l'utilisateur ([`stage_helper`]).
+/// 2. Un refus polkit (annulation, agent absent…) doit se voir
+///    immédiatement : on surveille le code de sortie de pkexec et on
+///    remonte son stderr tel quel, au lieu d'attendre bêtement un délai.
 pub async fn spawn_and_connect(
     app_exe: &Path,
     socket: &Path,
@@ -361,7 +381,7 @@ pub async fn spawn_and_connect(
         return HelperTransport::connect(socket).await;
     }
 
-    let pkexec = which_pkexec().ok_or_else(|| {
+    let pkexec = gufw_pkexec().ok_or_else(|| {
         CoreError::Other(
             "pkexec est introuvable : installez policykit-1 \
              (ou lancez l'application en root, ou utilisez une connexion SSH)."
@@ -369,46 +389,119 @@ pub async fn spawn_and_connect(
         )
     })?;
 
+    let staged = stage_helper(app_exe);
     let uid = nix::unistd::Uid::effective().as_raw();
-    let mut cmd = std::process::Command::new(pkexec);
-    cmd.arg(app_exe)
+
+    let mut child = tokio::process::Command::new(pkexec)
+        .arg(&staged)
         .arg("--serve")
         .arg("--socket")
         .arg(socket)
         .arg("--uid")
         .arg(uid.to_string())
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
-
-    // pkexec attend le helper : il faut détacher pour ne pas bloquer l'UI.
-    unsafe {
-        use std::os::unix::process::CommandExt;
-        cmd.pre_exec(|| {
-            // Nouveau groupe de processus : le survit à l'application.
-            nix::unistd::setsid().map_err(std::io::Error::other)?;
-            Ok(())
-        });
-    }
-    cmd.spawn()
+        .stderr(std::process::Stdio::piped())
+        .spawn()
         .map_err(|e| CoreError::Other(format!("lancement de pkexec : {e}")))?;
 
-    // Attend que la socket réponde (le temps que l'utilisateur tape son mot de passe).
+    // pkexec reste vivant tant que le helper tourne : sa sortie prématurée
+    // (authentification refusée/annulée, erreur d'accès…) est un échec.
     let start = std::time::Instant::now();
     loop {
         if ping_helper(socket).await {
-            break;
+            return HelperTransport::connect(socket).await;
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let mut stderr = String::new();
+                if let Some(mut out) = child.stderr.take() {
+                    use tokio::io::AsyncReadExt;
+                    let _ = out.read_to_string(&mut stderr).await;
+                }
+                let msg = stderr.trim();
+                if status.success() {
+                    // Sorti « proprement » sans socket : probablement une
+                    // instance déjà vivante détectée par le helper.
+                    if ping_helper(socket).await {
+                        return HelperTransport::connect(socket).await;
+                    }
+                    return Err(CoreError::Other(
+                        "l'assistant root s'est arrêté immédiatement".into(),
+                    ));
+                }
+                return Err(CoreError::Other(format!(
+                    "pkexec a refusé (code {status}) : {}",
+                    if msg.is_empty() { "aucun message" } else { msg }
+                )));
+            }
+            Ok(None) => {}
+            Err(e) => {
+                return Err(CoreError::Other(format!("surveillance de pkexec : {e}")));
+            }
         }
         if start.elapsed() > wait {
-            return Err(CoreError::Other(
-                "l'assistant root n'a pas démarré : l'authentification polkit a-t-elle échoué ?".into(),
-            ));
+            let _ = child.start_kill();
+            return Err(CoreError::Other(format!(
+                "l'assistant root n'a pas démarré en {} s — \
+                 la fenêtre de mot de passe est-elle apparue ?",
+                wait.as_secs()
+            )));
         }
-        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     }
-    HelperTransport::connect(socket).await
 }
 
-fn which_pkexec() -> Option<PathBuf> {
+/// Copie le binaire hors d'un montage volatile (AppImage) vers
+/// `~/.cache/gufw/helper/`, accessible à root pour l'exec pkexec.
+/// Hors AppImage (installation classique), le chemin est retourné tel quel.
+pub fn stage_helper(app_exe: &Path) -> PathBuf {
+    let exe_str = app_exe.to_string_lossy();
+    let volatile = exe_str.contains(".mount_") || app_exe.starts_with("/tmp/.mount_");
+    if !volatile {
+        return app_exe.to_path_buf();
+    }
+
+    let Some(dir) = staging_dir() else {
+        return app_exe.to_path_buf();
+    };
+    let staged = dir.join(app_exe.file_name().unwrap_or_else(|| std::ffi::OsStr::new("gufw")));
+
+    let src_len = std::fs::metadata(app_exe).map(|m| m.len()).unwrap_or(0);
+    let ok = match std::fs::metadata(&staged) {
+        Ok(m) => m.len() == src_len,
+        Err(_) => false,
+    };
+    if !ok {
+        // Copie atomique : d'abord un fichier temporaire, puis rename.
+        let tmp = staged.with_extension("new");
+        if std::fs::copy(app_exe, &tmp).is_ok() {
+            let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755));
+            if std::fs::rename(&tmp, &staged).is_err() {
+                let _ = std::fs::remove_file(&tmp);
+            }
+        }
+    }
+    if staged.is_file() {
+        staged
+    } else {
+        app_exe.to_path_buf()
+    }
+}
+
+fn staging_dir() -> Option<PathBuf> {
+    let base = std::env::var_os("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache"))
+        })?;
+    let dir = base.join("gufw").join("helper");
+    std::fs::create_dir_all(&dir).ok()?;
+    let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
+    Some(dir)
+}
+
+fn gufw_pkexec() -> Option<PathBuf> {
     ["/usr/bin/pkexec", "/bin/pkexec"]
         .iter()
         .map(PathBuf::from)
@@ -456,5 +549,78 @@ mod tests {
         let resp = handle_request(&req);
         assert!(!resp.ok);
         assert!(resp.error.unwrap().contains("liste blanche"));
+    }
+}
+
+#[cfg(test)]
+mod spawn_tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    /// pkexec refuse un chemin inexistant AVANT le dialogue polkit : la
+    /// fonction doit échouer vite avec le message réel, sans attendre.
+    #[tokio::test]
+    async fn spawn_and_connect_echoue_vite_sur_chemin_invalide() {
+        let socket = std::env::temp_dir().join(format!(
+            "gufw-ff-{}-{}.sock",
+            std::process::id(),
+            line!()
+        ));
+        let _ = std::fs::remove_file(&socket);
+        let start = Instant::now();
+        let res = spawn_and_connect(
+            Path::new("/definitivement/inexistant"),
+            &socket,
+            Duration::from_secs(30),
+        )
+        .await;
+        let elapsed = start.elapsed();
+        assert!(res.is_err(), "devrait échouer");
+        let msg = res.unwrap_err().to_string();
+        assert!(msg.contains("pkexec"), "message : {msg}");
+        assert!(
+            msg.contains("No such file") || msg.contains("Error accessing"),
+            "message pkexec attendu : {msg}"
+        );
+        assert!(
+            elapsed < Duration::from_secs(10),
+            "échec trop lent : {elapsed:?}"
+        );
+        let _ = std::fs::remove_file(&socket);
+    }
+
+    /// Un binaire dans un montage AppImage (motif .mount_) doit être copié
+    /// vers le répertoire de staging stable, avec son contenu intact.
+    #[test]
+    fn stage_helper_copie_le_binaire_du_montage() {
+        // Chemin « volatile » au nom AppImage, parfaitement créable.
+        let mount = std::env::temp_dir()
+            .join(format!(".mount_TESTGUFW-{}-{}", std::process::id(), line!()));
+        let bin = mount.join("usr/bin/gufw");
+        let _ = std::fs::remove_dir_all(&mount);
+        std::fs::create_dir_all(bin.parent().unwrap()).unwrap();
+        std::fs::write(&bin, b"contenu factice du binaire pour test").unwrap();
+
+        // Hors montage : inchangé.
+        assert_eq!(
+            stage_helper(Path::new("/usr/bin/gufw")),
+            PathBuf::from("/usr/bin/gufw")
+        );
+
+        // Montage volatile : copié dans le cache, contenu identique.
+        let staged = stage_helper(&bin);
+        assert_ne!(staged, bin, "devrait être copié");
+        assert!(staged.to_string_lossy().contains("gufw"), "chemin : {staged:?}");
+        assert_eq!(
+            std::fs::read(&staged).unwrap(),
+            b"contenu factice du binaire pour test".to_vec()
+        );
+
+        // Idempotent : un second appel reprend le même chemin.
+        let again = stage_helper(&bin);
+        assert_eq!(again, staged);
+
+        let _ = std::fs::remove_file(&staged);
+        let _ = std::fs::remove_dir_all(&mount);
     }
 }

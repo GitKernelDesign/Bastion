@@ -443,7 +443,9 @@ impl GuiApp {
                 self.form.passphrase.clear();
                 self.form.sudo_password.clear();
                 self.modal = None;
-                self.toasts.success("Connecté");
+                // Feedback évident : on lande directement sur les données.
+                self.screen = Screen::Firewall;
+                self.toasts.success("Connecté — pare-feu et Fail2Ban en cours de lecture…");
                 self.refresh_all();
             }
             Event::ConnectFailed { reason } => {

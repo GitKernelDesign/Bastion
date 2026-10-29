@@ -192,7 +192,11 @@ fn statusbar(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                     ui.add(egui::Spinner::new().size(11.0));
                     ui.label(RichText::new(format!("{pending} opération(s) en cours")).size(11.0).color(p.text_secondary));
                 } else if !msg.is_empty() {
-                    ui.label(RichText::new(msg).size(11.0).color(p.text_secondary));
+                    // Coupe proprement : le texte intégral est dans le toast
+                    // et le journal (la barre ne doit pas déborder).
+                    let short: String = msg.chars().take(110).collect();
+                    let short = if msg.chars().count() > 110 { format!("{short}…") } else { short };
+                    ui.label(RichText::new(short).size(11.0).color(p.text_secondary));
                 } else {
                     ui.label(RichText::new("Prêt").size(11.0).color(p.text_secondary));
                 }
