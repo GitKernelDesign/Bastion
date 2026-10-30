@@ -24,7 +24,7 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &crate::theme::Palette) {
     });
 
     ui.add_space(10.0);
-    components::hint(ui, p, t.privacy_note);
+    components::hint_on_bg(ui, p, t.privacy_note);
 }
 
 fn session_summary(app: &mut GuiApp, ui: &mut egui::Ui, p: &crate::theme::Palette) {

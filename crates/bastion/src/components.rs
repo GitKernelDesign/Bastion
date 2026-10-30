@@ -426,6 +426,12 @@ pub fn hint(ui: &mut Ui, p: &Palette, text: &str) {
     ui.label(RichText::new(text).size(12.5).color(p.text_secondary));
 }
 
+/// Aide contextuelle posée directement sur le fond de travail : en thème
+/// sombre à fond clair (terracotta), la typo bascule en ton sombre.
+pub fn hint_on_bg(ui: &mut Ui, p: &Palette, text: &str) {
+    ui.label(RichText::new(text).size(12.5).color(p.on_bg_secondary));
+}
+
 /// État vide (aucune donnée) avec message et suggestion.
 pub fn empty_state(ui: &mut Ui, p: &Palette, message: &str, sub: &str) {
     ui.vertical_centered(|ui| {
