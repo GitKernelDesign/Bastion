@@ -102,6 +102,8 @@ pub const TR: Tr = Tr {
     col_comment: "Commentaire",
     rules_empty: "Aucune règle",
     rules_empty_hint: "Cliquez sur « Ajouter » pour autoriser un port ou une application.",
+    ports_active_title: "Ports actifs",
+    ports_empty_hint: "Aucun port ou service ouvert explicitement — les règles sans port particulier restent dans la carte Règles.",
     mono_hint: "Les adresses et ports sont en police mono : comparables d'une ligne à l'autre.",
     v6_hint: "Le badge « v6 » signale la déclinaison IPv6 d'une règle.",
     report_btn: "Rapport",

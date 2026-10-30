@@ -185,6 +185,8 @@ pub struct Tr {
     pub col_comment: &'static str,
     pub rules_empty: &'static str,
     pub rules_empty_hint: &'static str,
+    pub ports_active_title: &'static str,
+    pub ports_empty_hint: &'static str,
     pub mono_hint: &'static str,
     pub v6_hint: &'static str,
     pub report_btn: &'static str,

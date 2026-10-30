@@ -27,6 +27,8 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     ui.add_space(12.0);
     logging_card(app, ui, p);
     ui.add_space(12.0);
+    ports_card(app, ui, p);
+    ui.add_space(12.0);
     rules_card(app, ui, p);
     ui.add_space(12.0);
 
@@ -337,6 +339,62 @@ fn logging_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
         }
         ui.add_space(4.0);
         components::hint(ui, p, t.logging_hint);
+    });
+}
+
+// ─── Carte ports actifs ──────────────────────────────────────────────────────
+fn ports_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
+    let t = app.tr;
+    // Ports/services ouverts, dérivés des règles (colonne « To » ≠ Anywhere).
+    // Regroupés par (port, action, direction) avec les numéros de règles.
+    let mut specs: Vec<(String, RuleAction, RuleDir, Vec<String>)> = Vec::new();
+    for r in &app.firewall.rules {
+        if r.to.is_empty() || r.to.eq_ignore_ascii_case("anywhere") {
+            continue;
+        }
+        let key = (r.to.clone(), r.action, r.dir);
+        match specs
+            .iter_mut()
+            .find(|(to, a, d, _)| (to.clone(), *a, *d) == key)
+        {
+            Some((_, _, _, nums)) => nums.push(r.number.to_string()),
+            None => specs.push((r.to.clone(), r.action, r.dir, vec![r.number.to_string()])),
+        }
+    }
+
+    components::card_body(ui, p, |ui| {
+        ui.label(
+            RichText::new(t.ports_active_title.to_uppercase())
+                .size(11.5)
+                .weak()
+                .family(egui::FontFamily::Name("Medium".into())),
+        );
+        ui.add_space(6.0);
+        if app.phase != crate::app::ConnPhase::Connected {
+            components::hint(ui, p, t.need_connection_hint);
+            return;
+        }
+        if specs.is_empty() {
+            components::hint(ui, p, t.ports_empty_hint);
+            return;
+        }
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
+            for (to, action, dir, nums) in &specs {
+                let col = match action {
+                    RuleAction::Allow => p.success,
+                    RuleAction::Deny => p.danger,
+                    RuleAction::Reject => p.warning,
+                    RuleAction::Limit => p.accent,
+                };
+                components::action_badge(ui, p, to, col);
+                ui.label(
+                    RichText::new(format!("{} · #{}", t.rule_dir(*dir), nums.join(", #")))
+                        .size(11.5)
+                        .color(p.text_secondary),
+                );
+            }
+        });
     });
 }
 

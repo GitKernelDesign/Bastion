@@ -102,6 +102,8 @@ pub const TR: Tr = Tr {
     col_comment: "Comentario",
     rules_empty: "Sin reglas",
     rules_empty_hint: "Haga clic en «Añadir» para permitir un puerto o una aplicación.",
+    ports_active_title: "Puertos activos",
+    ports_empty_hint: "Ningún puerto o servicio abierto explícitamente — las reglas sin puerto concreto siguen en la tarjeta Reglas.",
     mono_hint: "Las direcciones y puertos usan fuente monoespaciada: fáciles de comparar línea a línea.",
     v6_hint: "La insignia «v6» señala la variante IPv6 de una regla.",
     report_btn: "Informe",
