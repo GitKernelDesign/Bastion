@@ -253,6 +253,7 @@ pub struct Tr {
     // ── Écran Fail2Ban
     pub f2b_subtitle: &'static str,
     pub service_label: &'static str,
+    pub fw_services_title: &'static str,
     pub state_unknown: &'static str,
     pub btn_start: &'static str,
     pub jails_title: &'static str,

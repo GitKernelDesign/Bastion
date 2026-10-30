@@ -166,6 +166,7 @@ pub const TR: Tr = Tr {
 
     f2b_subtitle: "Service, active jails and banned addresses, with ban actions.",
     service_label: "Service",
+    fw_services_title: "Firewall services",
     state_unknown: "unknown",
     btn_start: "Start",
     jails_title: "Jails",

@@ -21,6 +21,8 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     // puis journalisation, chacune en pleine largeur.
     status_card(app, ui, p);
     ui.add_space(12.0);
+    services_card(app, ui, p);
+    ui.add_space(12.0);
     policy_card(app, ui, p);
     ui.add_space(12.0);
     logging_card(app, ui, p);
@@ -175,6 +177,78 @@ fn status_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
             }
         }
     });
+}
+
+// ─── Carte services pare-feu actifs ─────────────────────────────────────────
+fn services_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
+    let t = app.tr;
+    let mut refresh_clicked = false;
+
+    // États relevés avant le rendu (emprunts isolés).
+    let rows: Vec<(&str, String, Option<std::time::Instant>)> = vec![
+        (
+            "ufw",
+            app.firewall
+                .ufw_service
+                .clone()
+                .unwrap_or_else(|| t.state_unknown.to_string()),
+            app.firewall.ufw_service_at,
+        ),
+        (
+            "fail2ban",
+            app.f2b
+                .service
+                .clone()
+                .unwrap_or_else(|| t.state_unknown.to_string()),
+            app.f2b.service_at,
+        ),
+    ];
+
+    components::card(
+        ui,
+        p,
+        t.fw_services_title,
+        |ui| {
+            if components::icon_button(ui, p, crate::icons::REFRESH, t.tooltip_refresh).clicked() {
+                refresh_clicked = true;
+            }
+        },
+        |ui| {
+            if app.phase != crate::app::ConnPhase::Connected {
+                components::hint(ui, p, t.need_connection_hint);
+                return;
+            }
+            for (name, state, at) in &rows {
+                ui.horizontal(|ui| {
+                    let col = if state == "active" {
+                        p.success
+                    } else if state == "failed" {
+                        p.danger
+                    } else {
+                        p.text_secondary
+                    };
+                    let (rect, _) =
+                        ui.allocate_exact_size(egui::vec2(12.0, 12.0), egui::Sense::hover());
+                    ui.painter().circle_filled(rect.center(), 5.0, col);
+                    ui.label(RichText::new(*name).monospace());
+                    let bg = crate::components::blend(
+                        col,
+                        ui.style().visuals.panel_fill,
+                        0.18,
+                    );
+                    components::badge(ui, p, state, col, bg);
+                    if let Some(at) = at {
+                        components::since_label(ui, p, t, *at);
+                    }
+                });
+            }
+        },
+    );
+
+    if refresh_clicked {
+        app.send_op(Pending::RefreshUfwService, Op::UfwServiceState);
+        app.send_op(Pending::RefreshService, Op::ServiceState);
+    }
 }
 
 // ─── Carte politiques ────────────────────────────────────────────────────────

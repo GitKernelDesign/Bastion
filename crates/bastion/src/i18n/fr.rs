@@ -166,6 +166,7 @@ pub const TR: Tr = Tr {
 
     f2b_subtitle: "Service, prisons actives et adresses bannies, avec actions de bannissement.",
     service_label: "Service",
+    fw_services_title: "Services pare-feu",
     state_unknown: "inconnu",
     btn_start: "Démarrer",
     jails_title: "Prisons",
