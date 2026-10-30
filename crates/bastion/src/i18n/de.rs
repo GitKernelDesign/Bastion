@@ -99,6 +99,8 @@ pub const TR: Tr = Tr {
     col_from: "Von",
     col_to_port: "An / Port",
     col_dir: "Richtung",
+    col_port: "Port / Dienst",
+    col_rules: "Regeln",
     col_comment: "Kommentar",
     rules_empty: "Keine Regeln",
     rules_empty_hint: "Klicken Sie auf „Hinzufügen“, um einen Port oder eine Anwendung zu erlauben.",
@@ -153,7 +155,7 @@ pub const TR: Tr = Tr {
     hint_insert: "1, 2, 3…",
     field_comment: "Kommentar",
     hint_comment: "Wird in der Regeltabelle angezeigt",
-    preview_label: "Vorschau:",
+    preview_title: "Befehlsvorschau",
     btn_add: "Hinzufügen",
 
     hk_unknown_title: "Unbekannter Server-Schlüssel",

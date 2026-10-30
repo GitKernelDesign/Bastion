@@ -99,6 +99,8 @@ pub const TR: Tr = Tr {
     col_from: "Desde",
     col_to_port: "Hacia / Puerto",
     col_dir: "Sentido",
+    col_port: "Puerto / servicio",
+    col_rules: "Reglas",
     col_comment: "Comentario",
     rules_empty: "Sin reglas",
     rules_empty_hint: "Haga clic en «Añadir» para permitir un puerto o una aplicación.",
@@ -153,7 +155,7 @@ pub const TR: Tr = Tr {
     hint_insert: "1, 2, 3…",
     field_comment: "Comentario",
     hint_comment: "Mostrado en la tabla de reglas",
-    preview_label: "Vista previa:",
+    preview_title: "Vista previa del comando",
     btn_add: "Añadir",
 
     hk_unknown_title: "Clave del servidor desconocida",

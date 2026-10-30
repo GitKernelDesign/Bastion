@@ -99,6 +99,8 @@ pub const TR: Tr = Tr {
     col_from: "De",
     col_to_port: "Vers / Port",
     col_dir: "Sens",
+    col_port: "Port / service",
+    col_rules: "Règles",
     col_comment: "Commentaire",
     rules_empty: "Aucune règle",
     rules_empty_hint: "Cliquez sur « Ajouter » pour autoriser un port ou une application.",
@@ -153,7 +155,7 @@ pub const TR: Tr = Tr {
     hint_insert: "1, 2, 3…",
     field_comment: "Commentaire",
     hint_comment: "Affiché dans la table des règles",
-    preview_label: "Aperçu :",
+    preview_title: "Aperçu de la commande",
     btn_add: "Ajouter",
 
     hk_unknown_title: "Clé du serveur inconnue",

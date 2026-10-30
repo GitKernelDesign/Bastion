@@ -29,6 +29,8 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     ui.add_space(12.0);
     ports_card(app, ui, p);
     ui.add_space(12.0);
+    preview_card(app, ui, p);
+    ui.add_space(12.0);
     rules_card(app, ui, p);
     ui.add_space(12.0);
 
@@ -346,8 +348,9 @@ fn logging_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
 fn ports_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     let t = app.tr;
     // Ports/services ouverts, dérivés des règles (colonne « To » ≠ Anywhere).
-    // Regroupés par (port, action, direction) avec les numéros de règles.
-    let mut specs: Vec<(String, RuleAction, RuleDir, Vec<String>)> = Vec::new();
+    // Regroupés par (port, action, direction) avec les numéros de règles
+    // et la présence d'une variante IPv6.
+    let mut specs: Vec<(String, RuleAction, RuleDir, Vec<String>, bool)> = Vec::new();
     for r in &app.firewall.rules {
         if r.to.is_empty() || r.to.eq_ignore_ascii_case("anywhere") {
             continue;
@@ -355,10 +358,19 @@ fn ports_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
         let key = (r.to.clone(), r.action, r.dir);
         match specs
             .iter_mut()
-            .find(|(to, a, d, _)| (to.clone(), *a, *d) == key)
+            .find(|(to, a, d, _, _)| (to.clone(), *a, *d) == key)
         {
-            Some((_, _, _, nums)) => nums.push(r.number.to_string()),
-            None => specs.push((r.to.clone(), r.action, r.dir, vec![r.number.to_string()])),
+            Some((_, _, _, nums, v6)) => {
+                nums.push(r.number.to_string());
+                *v6 = *v6 || r.ipv6;
+            }
+            None => specs.push((
+                r.to.clone(),
+                r.action,
+                r.dir,
+                vec![r.number.to_string()],
+                r.ipv6,
+            )),
         }
     }
 
@@ -378,23 +390,84 @@ fn ports_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
             components::hint(ui, p, t.ports_empty_hint);
             return;
         }
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
-            for (to, action, dir, nums) in &specs {
-                let col = match action {
-                    RuleAction::Allow => p.success,
-                    RuleAction::Deny => p.danger,
-                    RuleAction::Reject => p.warning,
-                    RuleAction::Limit => p.accent,
-                };
-                components::action_badge(ui, p, to, col);
-                ui.label(
-                    RichText::new(format!("{} · #{}", t.rule_dir(*dir), nums.join(", #")))
-                        .size(11.5)
-                        .color(p.text_secondary),
-                );
-            }
-        });
+        egui::Grid::new("ports-table")
+            .striped(true)
+            .num_columns(4)
+            .min_col_width(10.0)
+            .spacing(egui::vec2(16.0, 8.0))
+            .show(ui, |ui| {
+                ui.label(header(p, t.col_port));
+                ui.label(header(p, t.col_action));
+                ui.label(header(p, t.col_dir));
+                ui.label(header(p, t.col_rules));
+                ui.end_row();
+
+                for (to, action, dir, nums, v6) in &specs {
+                    let mut port_txt = to.clone();
+                    if *v6 {
+                        port_txt.push_str(" · v6");
+                    }
+                    ui.label(RichText::new(ellipsize(&port_txt, 34)).monospace())
+                        .on_hover_text(&port_txt);
+                    let (col, label) = match action {
+                        RuleAction::Allow => (p.success, t.action_allow),
+                        RuleAction::Deny => (p.danger, t.action_deny),
+                        RuleAction::Reject => (p.warning, t.action_reject),
+                        RuleAction::Limit => (p.accent, t.action_limit),
+                    };
+                    components::action_badge(ui, p, label, col);
+                    ui.label(RichText::new(t.rule_dir(*dir)).size(12.5));
+                    ui.label(
+                        RichText::new(nums.iter().map(|n| format!("#{n}")).collect::<Vec<_>>().join(", "))
+                            .monospace()
+                            .size(11.5)
+                            .color(p.text_secondary),
+                    );
+                    ui.end_row();
+                }
+            });
+    });
+}
+
+// ─── Carte aperçu de la commande ─────────────────────────────────────────────
+fn preview_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
+    let t = app.tr;
+    let preview = app.add_form.preview(t);
+    let valid = app.add_form.to_new_rule().is_ok();
+
+    components::card_body(ui, p, |ui| {
+        ui.label(
+            RichText::new(t.preview_title.to_uppercase())
+                .size(11.5)
+                .weak()
+                .family(egui::FontFamily::Name("Medium".into())),
+        );
+        ui.add_space(6.0);
+        if valid {
+            // Commande ufw sur fond code, coupe proprement, infobulle
+            // donne le texte intégral.
+            egui::Frame::NONE
+                .fill(p.row_alt)
+                .corner_radius(egui::CornerRadius::same(8))
+                .inner_margin(egui::Margin::same(10))
+                .show(ui, |ui| {
+                    ui.set_min_width(ui.available_width() - 2.0);
+                    ui.label(
+                        RichText::new(ellipsize(&preview, 140))
+                            .monospace()
+                            .color(p.text),
+                    )
+                    .on_hover_text(&preview);
+                });
+        } else {
+            // Formulaire incomplet/incorrect : la commande affichée est
+            // le message d'erreur localisé.
+            ui.label(
+                RichText::new(format!("{}  {}", crate::icons::WARNING, preview))
+                    .monospace()
+                    .color(p.danger),
+            );
+        }
     });
 }
 
@@ -521,13 +594,6 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 components::field(ui, p, t.field_comment, &mut f.comment, t.hint_comment);
             });
             ui.add_space(6.0);
-
-            // Aperçu de la commande.
-            let preview = app.add_form.preview(t);
-            ui.label(RichText::new(t.preview_label).size(11.5).color(p.text_secondary));
-            ui.label(RichText::new(ellipsize(&preview, 110)).monospace())
-                .on_hover_text(&preview);
-            ui.add_space(10.0);
 
             ui.horizontal(|ui| {
                 ui.label(crate::icons::icon(crate::icons::SEARCH));

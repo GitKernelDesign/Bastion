@@ -182,6 +182,8 @@ pub struct Tr {
     pub col_from: &'static str,
     pub col_to_port: &'static str,
     pub col_dir: &'static str,
+    pub col_port: &'static str,
+    pub col_rules: &'static str,
     pub col_comment: &'static str,
     pub rules_empty: &'static str,
     pub rules_empty_hint: &'static str,
@@ -238,7 +240,7 @@ pub struct Tr {
     pub hint_insert: &'static str,
     pub field_comment: &'static str,
     pub hint_comment: &'static str,
-    pub preview_label: &'static str,
+    pub preview_title: &'static str,
     pub btn_add: &'static str,
 
     // ── Clé de serveur SSH (TOFU)
