@@ -76,34 +76,36 @@ impl Palette {
         if kind == ThemeKind::Light {
             Palette {
                 dark: false,
-                bg: hex("#F3F5FA"),
-                bg_alt: hex("#FBFCFE"),
+                bg: hex("#F6F3F1"),
+                bg_alt: hex("#FCFAF8"),
                 card: hex("#FFFFFF"),
-                card_hover: hex("#EDF0F8"),
-                border: hex("#E4E7F0"),
-                text: hex("#171B26"),
-                text_secondary: hex("#646E84"),
-                accent: hex("#4F46E5"),
+                card_hover: hex("#F1EAE6"),
+                border: hex("#EAE1DC"),
+                text: hex("#241D19"),
+                text_secondary: hex("#7A6E66"),
+                // Accent = code couleur de bastionIcon.svg (terracotta).
+                accent: hex("#D0694C"),
                 success: hex("#059669"),
                 warning: hex("#D97706"),
                 danger: hex("#E11D48"),
-                row_alt: hex("#F1F4FA"),
+                row_alt: hex("#F3ECE8"),
             }
         } else {
             Palette {
                 dark: true,
-                bg: hex("#0E1016"),
-                bg_alt: hex("#141824"),
-                card: hex("#171C28"),
-                card_hover: hex("#202636"),
-                border: hex("#262D3F"),
-                text: hex("#E9ECF4"),
-                text_secondary: hex("#8E97AB"),
-                accent: hex("#7C8CFF"),
+                bg: hex("#141110"),
+                bg_alt: hex("#1B1714"),
+                card: hex("#211B17"),
+                card_hover: hex("#2A231E"),
+                border: hex("#332A25"),
+                text: hex("#F2ECE8"),
+                text_secondary: hex("#A3968E"),
+                // Accent = terracotta de l'icône, éclairci pour le sombre.
+                accent: hex("#E0815F"),
                 success: hex("#34D399"),
                 warning: hex("#FBBF24"),
                 danger: hex("#FB7185"),
-                row_alt: hex("#141A26"),
+                row_alt: hex("#1D1815"),
             }
         }
     }

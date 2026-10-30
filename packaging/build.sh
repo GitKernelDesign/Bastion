@@ -28,11 +28,12 @@ APPDIR="$OUT/Bastion.AppDir"
 
 echo "── Assemblage de l'AppDir…"
 rm -rf "$APPDIR"
-mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/applications" "$APPDIR/usr/share/icons/hicolor/512x512/apps"
+mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/applications" "$APPDIR/usr/share/icons/hicolor/512x512/apps" "$APPDIR/usr/share/icons/hicolor/scalable/apps"
 
 install -m 0755 "$BIN" "$APPDIR/usr/bin/bastion"
 install -m 0644 "$ROOT/packaging/bastion.desktop" "$APPDIR/usr/share/applications/bastion.desktop"
 install -m 0644 "$ROOT/assets/icon.png" "$APPDIR/usr/share/icons/hicolor/512x512/apps/bastion.png"
+install -m 0644 "$ROOT/assets/bastionIcon.svg" "$APPDIR/usr/share/icons/hicolor/scalable/apps/bastion.svg"
 install -m 0644 "$ROOT/assets/icon.png" "$APPDIR/bastion.png"
 install -m 0644 "$ROOT/assets/icon.png" "$APPDIR/.DirIcon"
 install -m 0644 "$ROOT/packaging/bastion.desktop" "$APPDIR/bastion.desktop"

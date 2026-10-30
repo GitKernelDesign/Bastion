@@ -99,7 +99,14 @@ fn sidebar(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
             ui.add_space(6.0);
 
             ui.horizontal(|ui| {
-                ui.label(icons::icon_sz(icons::SHIELD, 26.0, p.accent));
+                // Logo Bastion (assets/bastionIcon.svg rasterisé en PNG).
+                ui.add(
+                    egui::Image::from_bytes(
+                        "bytes://bastion-icon.png",
+                        include_bytes!("../../../../assets/icon64.png").to_vec(),
+                    )
+                    .max_size(egui::vec2(30.0, 30.0)),
+                );
                 ui.vertical(|ui| {
                     ui.label(
                         RichText::new("Bastion")
