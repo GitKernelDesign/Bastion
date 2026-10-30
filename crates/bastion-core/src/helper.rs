@@ -286,7 +286,7 @@ impl Transport for HelperTransport {
         let mut reader = tokio::io::BufReader::new(&mut *stream);
         let mut resp_line = String::new();
         let resp: HelperResponse = tokio::time::timeout(
-            std::time::Duration::from_secs(60),
+            crate::transport::command_timeout(&spec.program),
             async {
                 loop {
                     resp_line.clear();

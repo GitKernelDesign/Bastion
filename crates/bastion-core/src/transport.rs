@@ -2,8 +2,19 @@
 //! soit la manière d'y accéder (local root, helper polkit, SSH).
 
 use crate::error::CoreError;
-use crate::exec::{ensure_whitelisted, CommandSpec};
+use crate::exec::{ensure_whitelisted, CommandSpec, Program};
 use async_trait::async_trait;
+
+/// Délai d'attente d'une commande selon le programme. Les analyses
+/// antivirus peuvent parcourir des dizaines de milliers de fichiers :
+/// elles disposent de plusieurs heures ; tout le reste reste borné
+/// court (commande bloquée, connexion perdue…).
+pub fn command_timeout(program: &Program) -> std::time::Duration {
+    match program {
+        Program::Clamscan | Program::Clamdscan => std::time::Duration::from_secs(4 * 3600),
+        _ => std::time::Duration::from_secs(60),
+    }
+}
 
 /// Résultat d'une commande système.
 #[derive(Debug, Clone, Default)]
@@ -72,4 +83,24 @@ pub async fn exec_checked(t: &dyn Transport, spec: &CommandSpec) -> Result<Strin
 pub async fn exec_lax(t: &dyn Transport, spec: &CommandSpec) -> Result<ExecOutput, CoreError> {
     ensure_whitelisted(spec)?;
     t.exec(spec).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Les analyses ClamAV disposent d'heures ; le reste reste borné court.
+    #[test]
+    fn delai_attente_par_commande() {
+        assert_eq!(
+            command_timeout(&Program::Clamscan),
+            std::time::Duration::from_secs(4 * 3600)
+        );
+        assert_eq!(
+            command_timeout(&Program::Clamdscan),
+            std::time::Duration::from_secs(4 * 3600)
+        );
+        assert_eq!(command_timeout(&Program::Ufw), std::time::Duration::from_secs(60));
+        assert_eq!(command_timeout(&Program::Systemctl), std::time::Duration::from_secs(60));
+    }
 }

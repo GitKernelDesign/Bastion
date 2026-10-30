@@ -326,23 +326,34 @@ fn scan_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 app.clam.picking = true;
                 app.worker.send(crate::worker::Job::PickFolder);
             }
-            // Bouton d'analyse large : l'icône et le libellé tiennent
-            // toujours, y compris avec le spinner pendant le travail.
-            if components::styled_button_minw(
+            // Bouton d'analyse large ; pendant le travail, la loupe est
+            // remplacée par un spinner peint DANS le bouton.
+            let label = if busy {
+                format!("    {}", t.clam_scan_btn)
+            } else {
+                format!("{}  {}", crate::icons::SEARCH, t.clam_scan_btn)
+            };
+            let busy_btn = components::styled_button_minw(
                 ui,
                 p,
-                &format!("{}  {}", crate::icons::SEARCH, t.clam_scan_btn),
+                &label,
                 components::BtnKind::Primary,
                 enabled,
                 170.0,
             )
-            .on_hover_text(t.clam_scan_hint)
-            .clicked()
-            {
-                scan = true;
-            }
+            .on_hover_text(t.clam_scan_hint);
             if busy {
-                ui.add(egui::Spinner::new().size(16.0));
+                let r = busy_btn.rect;
+                egui::Spinner::new().size(16.0).paint_at(
+                    ui,
+                    egui::Rect::from_min_size(
+                        egui::pos2(r.left() + 16.0, r.center().y - 8.0),
+                        egui::vec2(16.0, 16.0),
+                    ),
+                );
+            }
+            if busy_btn.clicked() {
+                scan = true;
             }
         });
         ui.add_space(4.0);

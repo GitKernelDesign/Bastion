@@ -225,7 +225,8 @@ impl Transport for SshTransport {
             }
         };
 
-        tokio::time::timeout(std::time::Duration::from_secs(90), read_all)
+        let limit = crate::transport::command_timeout(&spec.program);
+        tokio::time::timeout(limit, read_all)
             .await
             .map_err(|_| CoreError::Disconnected("délai dépassé pendant l'exécution".into()))?;
 
