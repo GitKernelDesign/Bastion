@@ -14,7 +14,9 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     ui.add_space(6.0);
 
     if app.phase != crate::app::ConnPhase::Connected {
-        components::empty_state(ui, p, t.status_disconnected, t.need_connection_hint);
+        components::card_body(ui, p, |ui| {
+            components::empty_state(ui, p, t.status_disconnected, t.need_connection_hint);
+        });
         return;
     }
 

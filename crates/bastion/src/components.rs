@@ -442,15 +442,16 @@ pub fn empty_state(ui: &mut Ui, p: &Palette, message: &str, sub: &str) {
     });
 }
 
-/// En-tête d'écran (titre 20 px + sous-titre).
+/// En-tête d'écran (titre 20 px + sous-titre), posé sur le fond de travail.
 pub fn screen_header(ui: &mut Ui, p: &Palette, title: &str, sub: &str) {
     ui.vertical(|ui| {
         ui.label(
             RichText::new(title)
                 .size(20.0)
+                .color(p.on_bg)
                 .family(egui::FontFamily::Name("SemiBold".into())),
         );
-        ui.label(RichText::new(sub).size(12.5).color(p.text_secondary));
+        ui.label(RichText::new(sub).size(12.5).color(p.on_bg_secondary));
         ui.add_space(8.0);
     });
 }

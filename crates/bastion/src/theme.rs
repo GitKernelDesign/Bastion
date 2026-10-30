@@ -16,6 +16,9 @@ pub struct Palette {
     pub border: Color32,
     pub text: Color32,
     pub text_secondary: Color32,
+    /// Texte posé directement sur le fond de travail (hors cartes).
+    pub on_bg: Color32,
+    pub on_bg_secondary: Color32,
     pub accent: Color32,
     pub success: Color32,
     pub warning: Color32,
@@ -93,6 +96,8 @@ impl Palette {
                 border: hex("#EAE1DC"),
                 text: hex("#241D19"),
                 text_secondary: hex("#7A6E66"),
+                on_bg: hex("#241D19"),
+                on_bg_secondary: hex("#7A6E66"),
                 // Accent = code couleur de bastionIcon.svg (terracotta).
                 accent: hex("#D0694C"),
                 success: hex("#059669"),
@@ -103,13 +108,16 @@ impl Palette {
         } else {
             Palette {
                 dark: true,
-                bg: hex("#141110"),
+                // Fond de travail demandé : terracotta taupe #AB7F73.
+                bg: hex("#AB7F73"),
                 bg_alt: hex("#1B1714"),
                 card: hex("#211B17"),
                 card_hover: hex("#2A231E"),
                 border: hex("#3B332D"),
                 text: hex("#F2ECE8"),
                 text_secondary: hex("#A3968E"),
+                on_bg: hex("#2A1E19"),
+                on_bg_secondary: hex("#4E382E"),
                 // Accent = terracotta de l'icône, éclairci pour le sombre.
                 accent: hex("#E0815F"),
                 success: hex("#34D399"),
@@ -219,7 +227,7 @@ fn theme_sombre_et_clair_bien_appliques() {
     crate::theme::apply(&ctx, crate::config::ThemeKind::Dark, 1.0);
     assert_eq!(ctx.theme(), egui::Theme::Dark, "thème actif attendu : Dark");
     let st = ctx.style_of(egui::Theme::Dark);
-    assert_eq!(st.visuals.panel_fill, crate::theme::hex("#141110"), "panel_fill sombre");
+    assert_eq!(st.visuals.panel_fill, crate::theme::hex("#AB7F73"), "panel_fill sombre");
     assert_eq!(st.visuals.widgets.inactive.bg_fill, crate::theme::hex("#211B17"), "widget bg sombre");
 
     // Clair actif.
@@ -236,7 +244,7 @@ fn theme_sombre_et_clair_bien_appliques() {
         egui::CentralPanel::default().show(ui, |ui| {
             // Le style courant du ui doit être sombre.
             let fill = ui.style().visuals.panel_fill;
-            assert_eq!(fill, crate::theme::hex("#141110"), "style courant du ui : sombre");
+            assert_eq!(fill, crate::theme::hex("#AB7F73"), "style courant du ui : sombre");
         });
     });
     let mut out = ctx.end_pass();
