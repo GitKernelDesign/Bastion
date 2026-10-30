@@ -315,6 +315,8 @@ pub struct GuiApp {
     pub form: ConnectForm,
     pub add_form: AddRuleForm,
     pub probe: (Option<String>, Option<String>),
+    /// Logo Bastion (rasterisé, sans loader d'image externe).
+    pub logo: egui::TextureHandle,
     pub status_msg: String,
     pub last_error_toast: Option<(String, Instant)>,
 }
@@ -335,6 +337,14 @@ impl GuiApp {
         let t = tr(lang);
         crate::theme::apply(&cc.egui_ctx, cfg.theme, cfg.font_scale);
         let resolved_theme = crate::theme::resolve(cfg.theme);
+        let logo = cc.egui_ctx.load_texture(
+            "bastion-logo",
+            egui::ColorImage::from_rgba_unmultiplied(
+                [64, 64],
+                include_bytes!("../../../assets/icon64.rgba"),
+            ),
+            egui::TextureOptions::LINEAR,
+        );
         let worker = WorkerHandle::spawn();
         worker.send(Job::ProbeLocalTools);
 
@@ -350,6 +360,7 @@ impl GuiApp {
             last_refresh_sent: None,
             resolved_theme,
             last_theme_check: Instant::now(),
+            logo,
             pending: HashMap::new(),
             next_id: 1,
             journal: VecDeque::with_capacity(JOURNAL_CAP),

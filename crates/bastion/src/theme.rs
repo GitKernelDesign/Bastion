@@ -47,6 +47,16 @@ pub fn system_dark() -> bool {
             return true;
         }
     }
+    // color-scheme = 'default' → le thème GTK tranche (ex. 'Adwaita-dark').
+    if let Ok(out) = std::process::Command::new("gsettings")
+        .args(["get", "org.gnome.desktop.interface", "gtk-theme"])
+        .output()
+    {
+        let v = String::from_utf8_lossy(&out.stdout).to_lowercase();
+        if v.contains("dark") {
+            return true;
+        }
+    }
     // Variable d'environnement GTK (ex. GTK_THEME=Adwaita:dark).
     if let Some(gtk) = std::env::var_os("GTK_THEME") {
         if gtk.to_string_lossy().to_lowercase().contains("dark") {
@@ -97,7 +107,7 @@ impl Palette {
                 bg_alt: hex("#1B1714"),
                 card: hex("#211B17"),
                 card_hover: hex("#2A231E"),
-                border: hex("#332A25"),
+                border: hex("#3B332D"),
                 text: hex("#F2ECE8"),
                 text_secondary: hex("#A3968E"),
                 // Accent = terracotta de l'icône, éclairci pour le sombre.
@@ -199,3 +209,37 @@ pub fn apply(ctx: &Context, kind: ThemeKind, font_scale: f32) -> Palette {
     ctx.set_theme(pref);
     p
 }
+
+#[test]
+fn theme_sombre_et_clair_bien_appliques() {
+    let ctx = egui::Context::default();
+    crate::fonts::install(&ctx);
+
+    // Sombre actif : le style actif doit être notre palette sombre.
+    crate::theme::apply(&ctx, crate::config::ThemeKind::Dark, 1.0);
+    assert_eq!(ctx.theme(), egui::Theme::Dark, "thème actif attendu : Dark");
+    let st = ctx.style_of(egui::Theme::Dark);
+    assert_eq!(st.visuals.panel_fill, crate::theme::hex("#141110"), "panel_fill sombre");
+    assert_eq!(st.visuals.widgets.inactive.bg_fill, crate::theme::hex("#211B17"), "widget bg sombre");
+
+    // Clair actif.
+    crate::theme::apply(&ctx, crate::config::ThemeKind::Light, 1.0);
+    assert_eq!(ctx.theme(), egui::Theme::Light);
+    let st = ctx.style_of(egui::Theme::Light);
+    assert_eq!(st.visuals.panel_fill, crate::theme::hex("#F6F3F1"), "panel_fill clair");
+
+    // La frame d'un panneau en thème sombre : une carte doit être sombre.
+    crate::theme::apply(&ctx, crate::config::ThemeKind::Dark, 1.0);
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+    ctx.begin_pass(egui::RawInput { screen_rect: Some(screen), ..Default::default() });
+    let _ = ctx.root_ui(|ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
+            // Le style courant du ui doit être sombre.
+            let fill = ui.style().visuals.panel_fill;
+            assert_eq!(fill, crate::theme::hex("#141110"), "style courant du ui : sombre");
+        });
+    });
+    let mut out = ctx.end_pass();
+    out.textures_delta.clear();
+}
+
