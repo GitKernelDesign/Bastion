@@ -74,6 +74,7 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
         egui::ScrollArea::both()
             .id_salt("journal-scroll")
             .max_height(560.0)
+            .min_scrolled_height(560.0)
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 egui::Grid::new("journal-table")

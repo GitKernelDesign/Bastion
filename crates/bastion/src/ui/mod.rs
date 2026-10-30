@@ -314,4 +314,46 @@ mod tests {
             }
         }
     }
+
+    /// Une ScrollArea imbriquée dans le défilement de page doit conserver
+    /// sa hauteur voulue (sinon elle s'effondre à min_scrolled_size = 64 px,
+    /// voir egui#1097) même quand la hauteur disponible est épuisée.
+    #[test]
+    fn scroll_area_imbriquee_garde_sa_hauteur() {
+        let ctx = egui::Context::default();
+        crate::fonts::install(&ctx);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 700.0));
+        let input = egui::RawInput {
+            screen_rect: Some(screen),
+            ..Default::default()
+        };
+        ctx.begin_pass(input);
+        let mut inner_h = 0.0f32;
+        ctx.root_ui(|ui| {
+            egui::ScrollArea::vertical()
+                .id_salt("page")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    // Contenu qui épuise toute la hauteur disponible.
+                    for _ in 0..60 {
+                        ui.label("ligne de remplissage");
+                    }
+                    let resp = egui::ScrollArea::vertical()
+                        .id_salt("table")
+                        .max_height(900.0)
+                        .min_scrolled_height(900.0)
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            ui.label("contenu du tableau");
+                        });
+                    inner_h = resp.inner_rect.height();
+                });
+        });
+        let mut output = ctx.end_pass();
+        output.textures_delta.clear();
+        assert!(
+            inner_h >= 899.0,
+            "hauteur de la zone imbriquée attendue ~900, vue {inner_h}"
+        );
+    }
 }

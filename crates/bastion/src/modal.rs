@@ -104,6 +104,7 @@ pub fn render(app: &mut GuiApp, ctx: &egui::Context, p: &Palette, modal: Modal) 
                 |ui| {
                     egui::ScrollArea::both()
                         .max_height(420.0)
+                        .min_scrolled_height(420.0)
                         .auto_shrink([false, false])
                         .show(ui, |ui| ui.monospace(&text));
                     ui.add_space(8.0);
@@ -125,6 +126,7 @@ pub fn render(app: &mut GuiApp, ctx: &egui::Context, p: &Palette, modal: Modal) 
             let backdrop = show_modal(ctx, p, "sys-logs", &title, 760.0, |ui| {
                 egui::ScrollArea::both()
                     .max_height(440.0)
+                    .min_scrolled_height(440.0)
                     .auto_shrink([false, false])
                     .show(ui, |ui| ui.monospace(&text));
                 ui.add_space(8.0);

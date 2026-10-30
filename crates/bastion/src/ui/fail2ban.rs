@@ -173,6 +173,7 @@ fn jails_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
             }
             egui::ScrollArea::vertical()
                 .max_height(220.0)
+                .min_scrolled_height(220.0)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     egui::Grid::new("jails-table")
@@ -334,6 +335,7 @@ fn jail_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette, jail: &str) {
             }
             egui::ScrollArea::vertical()
                 .max_height(240.0)
+                .min_scrolled_height(240.0)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     egui::Grid::new("banned-table")

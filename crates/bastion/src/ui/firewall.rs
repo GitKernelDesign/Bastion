@@ -205,6 +205,7 @@ fn status_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                     egui::ScrollArea::vertical()
                         .id_salt("ufw-raw")
                         .max_height(140.0)
+                        .min_scrolled_height(140.0)
                         .show(ui, |ui| ui.monospace(&s.raw));
                 }
             }
@@ -636,9 +637,12 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
 
             // Hauteur très généreuse : au moins 26 règles visibles,
             // jusqu'à ~66 selon le nombre de règles filtrées.
-            let list_h = (30.0 + 30.0 * rules.len() as f32).clamp(810.0, 2010.0);
+            let list_h = (30.0 + 30.0 * rules.len() as f32).clamp(900.0, 2100.0);
             egui::ScrollArea::vertical()
                 .max_height(list_h)
+                // Hauteur forcée : sans min_scrolled_height, une ScrollArea
+                // imbriquée dans le défilement de page s'effondre à 64 px.
+                .min_scrolled_height(list_h)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     // 6 colonnes : la colonne commentaire n'est plus affichée
