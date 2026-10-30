@@ -327,6 +327,22 @@ pub fn primary_button(ui: &mut Ui, p: &Palette, label: &str) -> egui::Response {
     styled_button(ui, p, label, BtnKind::Primary)
 }
 
+/// Bouton stylé avec état activé/désactivé explicite (grisé si désactivé).
+pub fn styled_button_en(
+    ui: &mut Ui,
+    p: &Palette,
+    label: &str,
+    kind: BtnKind,
+    enabled: bool,
+) -> egui::Response {
+    if enabled {
+        styled_button(ui, p, label, kind)
+    } else {
+        let mut child = ui.new_child(egui::UiBuilder::new().disabled());
+        styled_button(&mut child, p, label, kind)
+    }
+}
+
 /// Petit bouton principal avec icône (« + Ajouter »).
 pub fn primary_button_small(ui: &mut Ui, p: &Palette, icon: &str, label: &str) -> egui::Response {
     styled_button(ui, p, &format!("{}  {}", icon, label), BtnKind::Primary)
