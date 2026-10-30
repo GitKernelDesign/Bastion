@@ -105,7 +105,6 @@ pub const TR: Tr = Tr {
     rules_empty_hint: "Klicken Sie auf „Hinzufügen“, um einen Port oder eine Anwendung zu erlauben.",
     ports_active_title: "Aktive Ports",
     ports_empty_hint: "Kein explizit geöffneter Port oder Dienst — Regeln ohne konkreten Port bleiben in der Karte „Regeln“.",
-    mono_hint: "Adressen und Ports in Monospace-Schrift: gut zeilenweise vergleichbar.",
     v6_hint: "Das „v6“-Abzeichen kennzeichnet die IPv6-Variante einer Regel.",
     report_btn: "Bericht",
     reload_btn: "Neu laden",

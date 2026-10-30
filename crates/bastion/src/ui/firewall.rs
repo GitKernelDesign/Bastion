@@ -393,23 +393,20 @@ fn ports_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
         }
         egui::Grid::new("ports-table")
             .striped(true)
-            .num_columns(4)
+            .num_columns(5)
             .min_col_width(10.0)
             .spacing(egui::vec2(16.0, 8.0))
             .show(ui, |ui| {
                 ui.label(header(p, t.col_port));
                 ui.label(header(p, t.col_action));
                 ui.label(header(p, t.col_dir));
+                ui.label(header(p, "IP"));
                 ui.label(header(p, t.col_rules));
                 ui.end_row();
 
                 for (to, action, dir, nums, v6) in &specs {
-                    let mut port_txt = to.clone();
-                    if *v6 {
-                        port_txt.push_str(" · v6");
-                    }
-                    ui.label(RichText::new(ellipsize(&port_txt, 34)).monospace())
-                        .on_hover_text(&port_txt);
+                    ui.label(RichText::new(ellipsize(to, 34)).monospace())
+                        .on_hover_text(to);
                     let (col, label) = match action {
                         RuleAction::Allow => (p.success, t.action_allow),
                         RuleAction::Deny => (p.danger, t.action_deny),
@@ -418,6 +415,12 @@ fn ports_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                     };
                     components::action_badge(ui, p, label, col);
                     ui.label(RichText::new(t.rule_dir(*dir)).size(12.5));
+                    if *v6 {
+                        let bg = crate::components::blend(p.accent, p.card, 0.16);
+                        components::badge(ui, p, "IPv6", p.accent, bg);
+                    } else {
+                        components::badge(ui, p, "IPv4", p.text_secondary, p.card_hover);
+                    }
                     ui.label(
                         RichText::new(
                             nums.iter().map(|n| format!("#{n}")).collect::<Vec<_>>().join(", "),
@@ -631,8 +634,9 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 .cloned()
                 .collect();
 
-            // Hauteur généreuse : au moins 20 règles visibles, jusqu'à ~50.
-            let list_h = (30.0 + 30.0 * rules.len() as f32).clamp(630.0, 1530.0);
+            // Hauteur très généreuse : au moins 26 règles visibles,
+            // jusqu'à ~66 selon le nombre de règles filtrées.
+            let list_h = (30.0 + 30.0 * rules.len() as f32).clamp(810.0, 2010.0);
             egui::ScrollArea::vertical()
                 .max_height(list_h)
                 .auto_shrink([false, false])
@@ -641,7 +645,7 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                     // (le commentaire reste dans l'infobulle de suppression).
                     egui::Grid::new("rules-table")
                         .striped(true)
-                        .num_columns(6)
+                        .num_columns(7)
                         .min_col_width(10.0)
                         .spacing(egui::vec2(14.0, 8.0))
                         .show(ui, |ui| {
@@ -650,6 +654,7 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                             ui.label(header(p, t.col_from));
                             ui.label(header(p, t.col_to_port));
                             ui.label(header(p, t.col_dir));
+                            ui.label(header(p, "IP"));
                             ui.label(header(p, ""));
                             ui.end_row();
 
@@ -666,11 +671,14 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                                     .on_hover_text(&rule.from);
                                 ui.label(RichText::new(ellipsize(&rule.to, 30)).monospace())
                                     .on_hover_text(&rule.to);
-                                let mut dir_txt = t.rule_dir(rule.dir).to_string();
+                                ui.label(RichText::new(t.rule_dir(rule.dir)).size(12.0).color(p.text_secondary));
+                                // Badge IPv4/IPv6 dédié : lecture immédiate du type d'adresse.
                                 if rule.ipv6 {
-                                    dir_txt.push_str(" · v6");
+                                    let bg = crate::components::blend(p.accent, p.card, 0.16);
+                                    components::badge(ui, p, "IPv6", p.accent, bg);
+                                } else {
+                                    components::badge(ui, p, "IPv4", p.text_secondary, p.card_hover);
                                 }
-                                ui.label(RichText::new(dir_txt).size(12.0).color(p.text_secondary));
                                 let mut desc = format!(
                                     "#{} — {} {} ({})",
                                     rule.number,
@@ -701,7 +709,6 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                         });
                 });
             ui.add_space(2.0);
-            components::hint(ui, p, t.mono_hint);
             ui.label(RichText::new(t.v6_hint).size(12.5).color(p.text_secondary));
         },
     );

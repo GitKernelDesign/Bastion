@@ -188,7 +188,6 @@ pub struct Tr {
     pub rules_empty_hint: &'static str,
     pub ports_active_title: &'static str,
     pub ports_empty_hint: &'static str,
-    pub mono_hint: &'static str,
     pub v6_hint: &'static str,
     pub report_btn: &'static str,
     pub reload_btn: &'static str,
