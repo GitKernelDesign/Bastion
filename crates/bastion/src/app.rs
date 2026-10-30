@@ -303,6 +303,8 @@ pub struct GuiApp {
     pub last_refresh_sent: Option<Instant>,
     /// Thème effectivement appliqué (résolution de « Système »).
     pub resolved_theme: crate::config::ThemeKind,
+    /// Dernier choix de thème vu (pour détecter un changement manuel).
+    pub last_cfg_theme: crate::config::ThemeKind,
     pub last_theme_check: Instant,
     pub pending: HashMap<u64, Pending>,
     pub next_id: u64,
@@ -337,6 +339,7 @@ impl GuiApp {
         let t = tr(lang);
         crate::theme::apply(&cc.egui_ctx, cfg.theme, cfg.font_scale);
         let resolved_theme = crate::theme::resolve(cfg.theme);
+        let last_cfg_theme = cfg.theme;
         let logo = cc.egui_ctx.load_texture(
             "bastion-logo",
             egui::ColorImage::from_rgba_unmultiplied(
@@ -359,6 +362,7 @@ impl GuiApp {
             expect_disconnect: false,
             last_refresh_sent: None,
             resolved_theme,
+            last_cfg_theme,
             last_theme_check: Instant::now(),
             logo,
             pending: HashMap::new(),
@@ -748,6 +752,13 @@ impl eframe::App for GuiApp {
         }
 
         self.handle_shortcuts(&ctx);
+
+        // Changement de thème (manuel) : on résout et on réapplique.
+        if self.cfg.theme != self.last_cfg_theme {
+            self.last_cfg_theme = self.cfg.theme;
+            self.resolved_theme = crate::theme::resolve(self.cfg.theme);
+            crate::theme::apply(&ctx, self.resolved_theme, self.cfg.font_scale);
+        }
 
         // Thème « Système » : on suit le réglage de l'OS en direct.
         if self.cfg.theme == crate::config::ThemeKind::System {

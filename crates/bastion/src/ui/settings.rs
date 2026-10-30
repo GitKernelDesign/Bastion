@@ -54,6 +54,7 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
             if theme != app.cfg.theme {
                 app.cfg.theme = theme;
                 app.cfg.save();
+                app.resolved_theme = crate::theme::resolve(theme);
                 crate::theme::apply(ui.ctx(), app.cfg.theme, app.cfg.font_scale);
             }
         });
