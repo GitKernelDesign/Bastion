@@ -635,9 +635,10 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 .cloned()
                 .collect();
 
-            // Hauteur très généreuse : au moins 26 règles visibles,
-            // jusqu'à ~66 selon le nombre de règles filtrées.
-            let list_h = (30.0 + 30.0 * rules.len() as f32).clamp(900.0, 2100.0);
+            // Hauteur ajustée au contenu : toutes les règles filtrées sont
+            // visibles sans défilement interne tant qu'il y en a moins de ~70 ;
+            // aucune grande zone vide quand il y a peu de règles.
+            let list_h = (34.0 + 29.0 * rules.len() as f32).clamp(200.0, 2100.0);
             egui::ScrollArea::vertical()
                 .max_height(list_h)
                 // Hauteur forcée : sans min_scrolled_height, une ScrollArea

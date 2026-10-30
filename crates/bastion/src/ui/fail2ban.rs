@@ -171,9 +171,10 @@ fn jails_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 components::empty_state(ui, p, t.jails_empty, t.jails_empty_hint);
                 return;
             }
+            let jails_h = (28.0 + 28.0 * jails.len() as f32).clamp(120.0, 460.0);
             egui::ScrollArea::vertical()
-                .max_height(220.0)
-                .min_scrolled_height(220.0)
+                .max_height(jails_h)
+                .min_scrolled_height(jails_h)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     egui::Grid::new("jails-table")
@@ -333,9 +334,10 @@ fn jail_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette, jail: &str) {
                 components::hint(ui, p, t.no_banned);
                 return;
             }
+            let banned_h = (28.0 + 28.0 * info.banned_ips.len() as f32).clamp(110.0, 480.0);
             egui::ScrollArea::vertical()
-                .max_height(240.0)
-                .min_scrolled_height(240.0)
+                .max_height(banned_h)
+                .min_scrolled_height(banned_h)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     egui::Grid::new("banned-table")
