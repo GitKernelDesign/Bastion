@@ -216,6 +216,33 @@ pub struct Tr {
     pub toast_ufw_service_started: &'static str,
     pub toast_ufw_service_stopped: &'static str,
     pub toast_ufw_service_restarted: &'static str,
+    // ── ClamAV ──
+    pub nav_clamav: &'static str,
+    pub clam_subtitle: &'static str,
+    pub clam_services_title: &'static str,
+    pub clam_db_title: &'static str,
+    pub clam_db_engine: &'static str,
+    pub clam_db_sigs: &'static str,
+    pub clam_db_date: &'static str,
+    pub clam_db_unknown: &'static str,
+    pub clam_update_btn: &'static str,
+    pub clam_update_toast: &'static str,
+    pub clam_logs_daemon_btn: &'static str,
+    pub clam_logs_freshclam_btn: &'static str,
+    pub clam_scan_title: &'static str,
+    pub clam_scan_path_label: &'static str,
+    pub clam_scan_hint: &'static str,
+    pub clam_scan_btn: &'static str,
+    pub clam_scan_daemon_note: &'static str,
+    pub clam_scan_found_title: &'static str,
+    pub clam_scan_clean_toast: &'static str,
+    pub clam_scan_infected_fmt: &'static str,
+    pub clam_not_installed: &'static str,
+    pub clam_service_started: &'static str,
+    pub clam_service_stopped: &'static str,
+    pub clam_service_restarted: &'static str,
+    pub clam_stop_title: &'static str,
+    pub clam_stop_body: &'static str,
     pub delete_rule_title: &'static str,
     pub delete_rule_tooltip_t: &'static str, // {desc}
     pub reset_title: &'static str,
@@ -384,6 +411,11 @@ impl Tr {
 
     pub fn ops_pending(&self, n: usize) -> String {
         rep(self.ops_pending_t, &[("{n}", &n.to_string())])
+    }
+
+    /// Toast de fin d'analyse avec fichiers infectés.
+    pub fn clam_scan_infected_toast(&self, n: usize) -> String {
+        rep(self.clam_scan_infected_fmt, &[("{n}", &n.to_string())])
     }
 
     pub fn rules_with_count(&self, n: usize) -> String {

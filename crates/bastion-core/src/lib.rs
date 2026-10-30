@@ -5,6 +5,7 @@
 //! blanche des commandes exécutables, et les transports (exécution locale
 //! directe, helper privilégié via polkit, SSH via `russh`).
 
+pub mod clamav;
 pub mod error;
 pub mod exec;
 pub mod fail2ban;

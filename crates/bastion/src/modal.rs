@@ -217,6 +217,16 @@ fn apply_confirm(app: &mut GuiApp, kind: &ConfirmKind) {
             Pending::UfwService(ServiceAction::Restart),
             Op::UfwServiceAction { action: ServiceAction::Restart },
         ),
+        ConfirmKind::StopClamav { unit } => app.send_op(
+            Pending::ClamService {
+                unit: unit.clone(),
+                action: ServiceAction::Stop,
+            },
+            Op::ClamServiceAction {
+                unit: unit.clone(),
+                action: ServiceAction::Stop,
+            },
+        ),
     }
 }
 

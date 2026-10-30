@@ -1,5 +1,6 @@
 //! Mise en page globale : barre latérale, barre supérieure, barre d'état.
 
+pub mod clamav;
 pub mod connect;
 pub mod fail2ban;
 pub mod firewall;
@@ -30,6 +31,7 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                     Screen::Connect => connect::render(app, ui, p),
                     Screen::Firewall => firewall::render(app, ui, p),
                     Screen::Fail2Ban => fail2ban::render(app, ui, p),
+                    Screen::Antivirus => clamav::render(app, ui, p),
                     Screen::Journal => journal::render(app, ui, p),
                     Screen::Settings => settings::render(app, ui, p),
                 });
@@ -121,6 +123,7 @@ fn sidebar(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 (Screen::Connect, icons::LOGIN, t.nav_connect),
                 (Screen::Firewall, icons::SECURITY, t.nav_firewall),
                 (Screen::Fail2Ban, icons::BAN, t.nav_fail2ban),
+                (Screen::Antivirus, icons::GPP_GOOD, t.nav_clamav),
                 (Screen::Journal, icons::HISTORY, t.nav_journal),
                 (Screen::Settings, icons::SETTINGS, t.nav_settings),
             ];

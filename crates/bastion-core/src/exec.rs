@@ -18,6 +18,8 @@ pub enum Program {
     Fail2banClient,
     Systemctl,
     Journalctl,
+    Clamscan,
+    Clamdscan,
 }
 
 impl Program {
@@ -27,6 +29,8 @@ impl Program {
             Program::Fail2banClient => "fail2ban-client",
             Program::Systemctl => "systemctl",
             Program::Journalctl => "journalctl",
+            Program::Clamscan => "clamscan",
+            Program::Clamdscan => "clamdscan",
         }
     }
 
@@ -36,6 +40,8 @@ impl Program {
             "fail2ban-client" => Some(Program::Fail2banClient),
             "systemctl" => Some(Program::Systemctl),
             "journalctl" => Some(Program::Journalctl),
+            "clamscan" => Some(Program::Clamscan),
+            "clamdscan" => Some(Program::Clamdscan),
             _ => None,
         }
     }
@@ -133,7 +139,77 @@ pub fn validate(spec: &CommandSpec) -> Result<(), String> {
         Program::Fail2banClient => validate_f2b(&spec.args),
         Program::Systemctl => validate_systemctl(&spec.args),
         Program::Journalctl => validate_journalctl(&spec.args),
+        Program::Clamscan => validate_clamscan(&spec.args),
+        Program::Clamdscan => validate_clamdscan(&spec.args),
     }
+}
+
+/// Unités systemd autorisées (pare-feu, anti-intrusion, antivirus).
+const ALLOWED_UNITS: &[&str] = &[
+    "fail2ban",
+    "ufw",
+    "clamav-daemon",
+    "clamav-freshclam",
+    "clamav-clamonacc",
+];
+
+/// Chemins refusés pour une analyse ClamAV (pseudo-systèmes, exécution,
+/// temporaires volatils) : scanned en root, on évite les zones à risque.
+fn clam_path_ok(p: &str) -> bool {
+    if !p.starts_with('/') || p.len() > 512 {
+        return false;
+    }
+    !p.starts_with("/proc")
+        && !p.starts_with("/sys")
+        && !p.starts_with("/dev")
+        && !p.starts_with("/run")
+}
+
+/// `clamscan` : soit `--version`, soit analyse de 1 à 4 chemins absolus
+/// sûrs avec les seuls indicateurs de lecture autorisés.
+fn validate_clamscan(args: &[String]) -> Result<(), String> {
+    if args.len() == 1 && args[0] == "--version" {
+        return Ok(());
+    }
+    let mut paths = 0;
+    for a in args {
+        match a.as_str() {
+            "-r" | "-i" | "--infected" | "--no-summary" | "--suppress-ok-results" | "--cross-fs" => {}
+            other => {
+                if !clam_path_ok(other) {
+                    return Err(format!("chemin d'analyse non autorisé : « {other} »"));
+                }
+                paths += 1;
+            }
+        }
+    }
+    if paths == 0 || paths > 4 {
+        return Err("clamscan attend 1 à 4 chemins absolus".into());
+    }
+    Ok(())
+}
+
+/// `clamdscan` : idem, via le démon (indicateurs dédiés).
+fn validate_clamdscan(args: &[String]) -> Result<(), String> {
+    if args.len() == 1 && args[0] == "--version" {
+        return Ok(());
+    }
+    let mut paths = 0;
+    for a in args {
+        match a.as_str() {
+            "--no-summary" | "--multiscan" | "--fdpass" => {}
+            other => {
+                if !clam_path_ok(other) {
+                    return Err(format!("chemin d'analyse non autorisé : « {other} »"));
+                }
+                paths += 1;
+            }
+        }
+    }
+    if paths == 0 || paths > 4 {
+        return Err("clamdscan attend 1 à 4 chemins absolus".into());
+    }
+    Ok(())
 }
 
 fn validate_ufw(args: &[String]) -> Result<(), String> {
@@ -332,7 +408,7 @@ fn validate_systemctl(args: &[String]) -> Result<(), String> {
     let action = args[0].as_str();
     let unit = args.last().unwrap();
     let unit = unit.strip_suffix(".service").unwrap_or(unit);
-    if !matches!(unit, "fail2ban" | "ufw") {
+    if !ALLOWED_UNITS.contains(&unit) {
         return Err(format!("unité systemd non autorisée : « {unit} »"));
     }
     match action {
@@ -356,7 +432,7 @@ fn validate_journalctl(args: &[String]) -> Result<(), String> {
             "-u" => {
                 let unit = args.get(i + 1).ok_or("valeur manquante pour -u")?;
                 let unit = unit.strip_suffix(".service").unwrap_or(unit);
-                if !matches!(unit, "fail2ban" | "ufw") {
+                if !ALLOWED_UNITS.contains(&unit) {
                     return Err(format!("unité journalctl non autorisée : « {unit} »"));
                 }
                 has_unit_or_kernel = true;

@@ -21,6 +21,12 @@
 - Bannir / débannir une IP, liste globale (« toutes les IP bannies ») ;
 - Journaux du service (`journalctl -u fail2ban`) et blocages UFW (`journalctl -k --grep UFW`).
 
+### Antivirus ClamAV
+- État des services `clamav-daemon` et `clamav-freshclam` (démarrer / redémarrer / arrêter) ;
+- Bases de signatures : moteur, nombre de signatures, date, mise à jour à la demande ;
+- Analyse à la demande d'un chemin (via le démon quand il est actif, sinon autonome) — lecture seule, aucun fichier n'est modifié ni supprimé ; résultats listés en clair ;
+- Journaux `clamd` et `freshclam`.
+
 ### Accès
 - **Local** : une seule authentification root par session (polkit/`pkexec`), via un assistant minimal à liste blanche stricte ;
 - **SSH** : mot de passe ou clé privée (avec phrase secrète), profils enregistrés, préfixe `sudo` optionnel, validation de la clé du serveur à la première connexion (TOFU) et alerte si elle change.

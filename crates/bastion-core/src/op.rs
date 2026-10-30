@@ -2,6 +2,7 @@
 //! utilisateur, exécutée par le worker sur le transport courant. L'interface
 //! ne construit jamais de commande elle-même.
 
+use crate::clamav;
 use crate::error::CoreError;
 use crate::exec::CommandSpec;
 use crate::fail2ban as f2b;
@@ -88,6 +89,28 @@ pub enum Op {
         which: LogSource,
         lines: u32,
     },
+    // ClamAV
+    /// États systemd de clamav-daemon et clamav-freshclam.
+    ClamServicesState,
+    /// Action systemd sur une unité ClamAV.
+    ClamServiceAction {
+        unit: String,
+        action: ServiceAction,
+    },
+    /// Bases de signatures (moteur, nombre, date).
+    ClamDbInfo,
+    /// Mise à jour des bases (redémarre clamav-freshclam).
+    ClamUpdate,
+    /// Analyse antivirus d'un chemin.
+    ClamScan {
+        path: String,
+        use_daemon: bool,
+    },
+    /// Journaux d'une unité ClamAV.
+    ClamLogs {
+        which: ClamLogSource,
+        lines: u32,
+    },
 }
 
 /// Résultat typé d'une opération.
@@ -102,6 +125,9 @@ pub enum OpResult {
     F2bGlobal(Box<F2bGlobal>),
     F2bJail(Box<JailInfo>),
     BannedAll(Vec<(String, Vec<String>)>),
+    ClamServices(String, String),
+    ClamDb(Box<ClamDb>),
+    ClamScanResult(Box<ClamScanResult>),
     Text(String),
 }
 
@@ -133,6 +159,12 @@ impl Op {
             Op::ServiceState => "Fail2Ban : état du service",
             Op::F2bReloadJail { .. } => "Fail2Ban : rechargement",
             Op::F2bLogs { .. } => "Journaux système",
+            Op::ClamServicesState => "ClamAV : état des services",
+            Op::ClamServiceAction { .. } => "ClamAV : service",
+            Op::ClamDbInfo => "ClamAV : bases de signatures",
+            Op::ClamUpdate => "ClamAV : mise à jour des bases",
+            Op::ClamScan { .. } => "ClamAV : analyse",
+            Op::ClamLogs { .. } => "ClamAV : journaux",
         }
     }
 }
@@ -179,6 +211,28 @@ pub async fn run_op(t: &dyn Transport, op: &Op) -> Result<OpResult, CoreError> {
         Op::F2bReloadJail { jail } => f2b::reload(t, jail.as_deref()).await.map(|_| OpResult::Ack),
         Op::F2bLogs { which, lines } => {
             f2b::system_logs(t, *which, *lines).await.map(OpResult::Text)
+        }
+        Op::ClamServicesState => clamav::services_state(t)
+            .await
+            .map(|(d, f)| OpResult::ClamServices(d, f)),
+        Op::ClamServiceAction { unit, action } => clamav::service_action(
+            t,
+            unit,
+            action.systemctl_name(),
+        )
+        .await
+        .map(|_| OpResult::Ack),
+        Op::ClamDbInfo => clamav::db_info(t).await.map(|db| OpResult::ClamDb(Box::new(db))),
+        Op::ClamUpdate => {
+            clamav::service_action(t, "clamav-freshclam", "restart")
+                .await
+                .map(|_| OpResult::Ack)
+        }
+        Op::ClamScan { path, use_daemon } => clamav::scan(t, path, *use_daemon)
+            .await
+            .map(|r| OpResult::ClamScanResult(Box::new(r))),
+        Op::ClamLogs { which, lines } => {
+            clamav::logs(t, *which, *lines).await.map(OpResult::Text)
         }
     }
 }

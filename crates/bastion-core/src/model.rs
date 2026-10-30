@@ -251,3 +251,27 @@ pub enum LogSource {
     Fail2ban,
     UfwBlocks,
 }
+
+/// État des bases de signatures ClamAV (sortie de `clamscan --version`).
+#[derive(Debug, Clone, Default)]
+pub struct ClamDb {
+    /// Version du moteur, ex. « 1.4.6 ».
+    pub engine: String,
+    /// Nombre de signatures, ex. 28169.
+    pub sigs: u64,
+    /// Date des bases, ex. « Fri Oct 30 07:26:48 2026 ».
+    pub db_date: String,
+}
+
+/// Résultat d'une analyse ClamAV : fichiers infectés (chemin, signature).
+#[derive(Debug, Clone, Default)]
+pub struct ClamScanResult {
+    pub infected: Vec<(String, String)>,
+}
+
+/// Journal ClamAV lisible.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClamLogSource {
+    Daemon,
+    Freshclam,
+}

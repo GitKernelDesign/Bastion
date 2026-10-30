@@ -17,6 +17,7 @@ pub enum Screen {
     Connect,
     Firewall,
     Fail2Ban,
+    Antivirus,
     Journal,
     Settings,
 }
@@ -26,8 +27,9 @@ impl Screen {
         match i {
             1 => Screen::Firewall,
             2 => Screen::Fail2Ban,
-            3 => Screen::Journal,
-            4 => Screen::Settings,
+            3 => Screen::Antivirus,
+            4 => Screen::Journal,
+            5 => Screen::Settings,
             _ => Screen::Connect,
         }
     }
@@ -64,6 +66,12 @@ pub enum Pending {
     Service(ServiceAction),
     UfwService(ServiceAction),
     RefreshUfwService,
+    ClamServices,
+    ClamService { unit: String, action: ServiceAction },
+    ClamDb,
+    ClamUpdate,
+    ClamScan,
+    ClamLogs,
     ReloadJail,
     Logs,
 }
@@ -92,6 +100,7 @@ pub enum ConfirmKind {
     RestartF2b,
     StopUfw,
     RestartUfw,
+    StopClamav { unit: String },
 }
 
 pub struct HostKeyCtx {
@@ -125,6 +134,31 @@ pub struct F2bUi {
     pub selected_jail: Option<String>,
     pub banned_all: Option<Vec<(String, Vec<String>)>>,
     pub ban_input: String,
+}
+
+/// Données de l'écran Antivirus (ClamAV).
+pub struct ClamUi {
+    pub daemon: Option<String>,
+    pub daemon_at: Option<Instant>,
+    pub freshclam: Option<String>,
+    pub freshclam_at: Option<Instant>,
+    pub db: Option<bastion_core::model::ClamDb>,
+    pub db_at: Option<Instant>,
+    pub scan_path: String,
+}
+
+impl Default for ClamUi {
+    fn default() -> Self {
+        ClamUi {
+            daemon: None,
+            daemon_at: None,
+            freshclam: None,
+            freshclam_at: None,
+            db: None,
+            db_at: None,
+            scan_path: String::new(),
+        }
+    }
 }
 
 /// Formulaire de connexion.
@@ -314,6 +348,7 @@ pub struct GuiApp {
     pub modal: Option<Modal>,
     pub firewall: FirewallUi,
     pub f2b: F2bUi,
+    pub clam: ClamUi,
     pub form: ConnectForm,
     pub add_form: AddRuleForm,
     pub probe: (Option<String>, Option<String>),
@@ -382,6 +417,7 @@ impl GuiApp {
                 ufw_service: None,
                 ufw_service_at: None,
             },
+            clam: ClamUi::default(),
             f2b: F2bUi {
                 global: None,
                 global_at: None,
@@ -429,6 +465,7 @@ impl GuiApp {
         self.send_op(Pending::RefreshF2b, Op::F2bStatus);
         self.send_op(Pending::RefreshService, Op::ServiceState);
         self.send_op(Pending::RefreshUfwService, Op::UfwServiceState);
+        self.send_op(Pending::ClamServices, Op::ClamServicesState);
         if let Some(jail) = self.f2b.selected_jail.clone() {
             self.send_op(Pending::RefreshJail, Op::F2bJail { jail });
         }
@@ -437,7 +474,7 @@ impl GuiApp {
     pub fn is_refreshing(&self) -> bool {
         self.pending
             .values()
-            .any(|p| matches!(p, Pending::RefreshStatus | Pending::RefreshRules | Pending::RefreshF2b | Pending::RefreshService | Pending::RefreshUfwService | Pending::RefreshJail))
+            .any(|p| matches!(p, Pending::RefreshStatus | Pending::RefreshRules | Pending::RefreshF2b | Pending::RefreshService | Pending::RefreshUfwService | Pending::RefreshJail | Pending::ClamServices))
     }
 
     // ── Journal / messages ────────────────────────────────────────────────
@@ -701,6 +738,62 @@ impl GuiApp {
                     });
                 }
             }
+            Pending::ClamServices => {
+                if let OpResult::ClamServices(daemon, freshclam) = res {
+                    self.clam.daemon = Some(daemon);
+                    self.clam.freshclam = Some(freshclam);
+                    self.clam.daemon_at = Some(Instant::now());
+                    self.clam.freshclam_at = Some(Instant::now());
+                }
+            }
+            Pending::ClamService { unit, action } => {
+                let msg = match action {
+                    ServiceAction::Start => self.tr.clam_service_started,
+                    ServiceAction::Stop => self.tr.clam_service_stopped,
+                    _ => self.tr.clam_service_restarted,
+                };
+                self.success(msg);
+                self.send_op(Pending::ClamServices, Op::ClamServicesState);
+                let _ = unit;
+            }
+            Pending::ClamDb => {
+                if let OpResult::ClamDb(db) = res {
+                    self.clam.db = Some(*db);
+                    self.clam.db_at = Some(Instant::now());
+                }
+            }
+            Pending::ClamUpdate => {
+                self.success(self.tr.clam_update_toast);
+                self.send_op(Pending::ClamServices, Op::ClamServicesState);
+                self.send_op(Pending::ClamDb, Op::ClamDbInfo);
+            }
+            Pending::ClamScan => {
+                if let OpResult::ClamScanResult(r) = res {
+                    if r.infected.is_empty() {
+                        self.success(self.tr.clam_scan_clean_toast);
+                    } else {
+                        let n = r.infected.len();
+                        self.toasts.success(self.tr.clam_scan_infected_toast(n));
+                        self.status_msg = self.tr.clam_scan_infected_toast(n);
+                        let mut text = String::new();
+                        for (path, virus) in &r.infected {
+                            text.push_str(&format!("{path} — {virus}\n"));
+                        }
+                        self.modal = Some(Modal::Logs {
+                            title: self.tr.clam_scan_found_title.to_string(),
+                            text,
+                        });
+                    }
+                }
+            }
+            Pending::ClamLogs => {
+                if let OpResult::Text(text) = res {
+                    self.modal = Some(Modal::Logs {
+                        title: self.tr.nav_clamav.to_string(),
+                        text,
+                    });
+                }
+            }
         }
     }
 
@@ -722,6 +815,7 @@ impl GuiApp {
                 | Pending::RefreshService
                 | Pending::RefreshUfwService
                 | Pending::RefreshJail
+                | Pending::ClamServices
         );
         if is_refresh {
             self.toast_error_throttled(msg);
