@@ -233,6 +233,7 @@ pub struct Tr {
     pub clam_scan_path_label: &'static str,
     pub clam_scan_hint: &'static str,
     pub clam_scan_btn: &'static str,
+    pub clam_browse_btn: &'static str,
     pub clam_scan_daemon_note: &'static str,
     pub clam_scan_found_title: &'static str,
     pub clam_scan_clean_toast: &'static str,

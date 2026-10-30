@@ -57,7 +57,29 @@ pub enum BtnKind {
 /// Bouton dessiné sur mesure : états survol/appui, ombre portée discrète,
 /// rayon homogène. Sobre : aucune couleur hors sémantique.
 pub fn styled_button(ui: &mut Ui, p: &Palette, label: &str, kind: BtnKind) -> egui::Response {
-    let enabled = ui.is_enabled();
+    styled_button_opts(ui, p, label, kind, ui.is_enabled(), 0.0)
+}
+
+/// Bouton stylé avec état activé/désactivé et largeur minimale explicites.
+pub fn styled_button_minw(
+    ui: &mut Ui,
+    p: &Palette,
+    label: &str,
+    kind: BtnKind,
+    enabled: bool,
+    min_width: f32,
+) -> egui::Response {
+    styled_button_opts(ui, p, label, kind, enabled, min_width)
+}
+
+fn styled_button_opts(
+    ui: &mut Ui,
+    p: &Palette,
+    label: &str,
+    kind: BtnKind,
+    enabled: bool,
+    min_width: f32,
+) -> egui::Response {
     let text_color = match kind {
         BtnKind::Primary | BtnKind::Danger => WHITE,
         _ => p.text,
@@ -69,7 +91,8 @@ pub fn styled_button(ui: &mut Ui, p: &Palette, label: &str, kind: BtnKind) -> eg
         if enabled { text_color } else { p.text_secondary },
     );
     let pad = egui::vec2(16.0, 9.0);
-    let size = galley.size() + 2.0 * pad;
+    let mut size = galley.size() + 2.0 * pad;
+    size.x = size.x.max(min_width);
     let sense = if enabled { Sense::click() } else { Sense::hover() };
     let (rect, resp) = ui.allocate_exact_size(size, sense);
     resp.widget_info(|| {
@@ -335,12 +358,7 @@ pub fn styled_button_en(
     kind: BtnKind,
     enabled: bool,
 ) -> egui::Response {
-    if enabled {
-        styled_button(ui, p, label, kind)
-    } else {
-        let mut child = ui.new_child(egui::UiBuilder::new().disabled());
-        styled_button(&mut child, p, label, kind)
-    }
+    styled_button_opts(ui, p, label, kind, enabled, 0.0)
 }
 
 /// Petit bouton principal avec icône (« + Ajouter »).

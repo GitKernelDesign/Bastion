@@ -289,13 +289,19 @@ fn scan_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     let busy = app.pending.values().any(|x| matches!(x, Pending::ClamScan));
     let daemon_active = app.clam.daemon.as_deref() == Some("active");
 
+    // Le sélecteur de dossier n'a de sens qu'en local : en SSH, la cible
+    // est distante et seul le chemin saisi à la main s'applique.
+    let local_target = !app.conn_desc.starts_with("SSH");
+
     components::card(ui, p, t.clam_scan_title, |_| {}, |ui| {
         ui.label(RichText::new(t.clam_scan_path_label).size(12.5).color(p.text_secondary));
         ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
             let resp = ui.add(
                 egui::TextEdit::singleline(&mut app.clam.scan_path)
                     .hint_text(t.clam_scan_hint)
-                    .desired_width((ui.available_width() - 130.0).max(160.0))
+                    // Réserve la place des deux boutons et du spinner.
+                    .desired_width((ui.available_width() - 350.0).max(160.0))
                     .font(egui::TextStyle::Monospace),
             );
             let path_ok = {
@@ -303,16 +309,32 @@ fn scan_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 s.starts_with('/') && !s.starts_with("/proc") && !s.starts_with("/sys")
                     && !s.starts_with("/dev") && !s.starts_with("/run")
             };
-            let enabled = path_ok && !busy;
+            let enabled = path_ok && !busy && !app.clam.picking;
             if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && enabled {
                 scan = true;
             }
+            // Sélecteur de dossier natif (portail xdg), barre conservée.
             if components::styled_button_en(
+                ui,
+                p,
+                &format!("{}  {}", crate::icons::FOLDER, t.clam_browse_btn),
+                components::BtnKind::Soft,
+                local_target && !app.clam.picking,
+            )
+            .clicked()
+            {
+                app.clam.picking = true;
+                app.worker.send(crate::worker::Job::PickFolder);
+            }
+            // Bouton d'analyse large : l'icône et le libellé tiennent
+            // toujours, y compris avec le spinner pendant le travail.
+            if components::styled_button_minw(
                 ui,
                 p,
                 &format!("{}  {}", crate::icons::SEARCH, t.clam_scan_btn),
                 components::BtnKind::Primary,
                 enabled,
+                170.0,
             )
             .on_hover_text(t.clam_scan_hint)
             .clicked()
@@ -320,7 +342,7 @@ fn scan_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 scan = true;
             }
             if busy {
-                ui.add(egui::Spinner::new().size(14.0));
+                ui.add(egui::Spinner::new().size(16.0));
             }
         });
         ui.add_space(4.0);

@@ -42,6 +42,7 @@ pub const LINK_OFF: &str = "\u{e16f}";
 pub const STORAGE: &str = "\u{e1db}";
 pub const RESTORE: &str = "\u{e8ba}";
 pub const TERMINAL_SSH: &str = "\u{eb8e}";
+pub const FOLDER: &str = "\u{e2c7}";
 
 /// Icône en taille normale (hérite la couleur du texte).
 pub fn icon(code: &str) -> RichText {

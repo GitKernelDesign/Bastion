@@ -148,6 +148,7 @@ pub const TR: Tr = Tr {
     clam_scan_path_label: "Path to scan",
     clam_scan_hint: "Absolute path, e.g. /home/me/Downloads",
     clam_scan_btn: "Scan",
+    clam_browse_btn: "Browse…",
     clam_scan_daemon_note: "Uses the ClamAV daemon when active (fast), standalone otherwise. Read-only: no file is modified or deleted.",
     clam_scan_found_title: "Infected files",
     clam_scan_clean_toast: "Scan finished: no infected file",

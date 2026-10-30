@@ -22,6 +22,8 @@ pub enum Job {
     Op { id: u64, op: Op },
     /// Détection locale (sans droits) des outils : versions ufw/fail2ban.
     ProbeLocalTools,
+    /// Sélecteur de dossier natif (portail xdg) pour l'analyse ClamAV.
+    PickFolder,
 }
 
 /// Entrée de journal (une commande exécutée).
@@ -46,6 +48,8 @@ pub enum Event {
     OpDone { id: u64, result: Result<OpResult, CoreError> },
     Log(LogEntry),
     ProbeLocalTools { ufw: Option<String>, fail2ban: Option<String> },
+    /// Dossier choisi via le sélecteur natif (None si annulé).
+    FolderPicked(Option<String>),
 }
 
 /// Handle côté interface : envoi non bloquant, réception par sondage.
@@ -252,6 +256,19 @@ async fn handle_job(transport: SharedTransport, tx: std::sync::mpsc::Sender<Even
                 }
             }
             let _ = tx.send(Event::OpDone { id, result: res });
+        }
+        Job::PickFolder => {
+            // Sélecteur natif hors du fil d'interface ; la boîte de dialogue
+            // bloque ce fil de travail tant qu'elle est ouverte.
+            let picked = tokio::task::spawn_blocking(|| {
+                rfd::FileDialog::new()
+                    .set_title("ClamAV")
+                    .pick_folder()
+                    .map(|p| p.to_string_lossy().to_string())
+            })
+            .await
+            .unwrap_or(None);
+            let _ = tx.send(Event::FolderPicked(picked));
         }
         Job::ProbeLocalTools => {
             let ufw = probe_version(Path::new("/usr/sbin/ufw")).await;

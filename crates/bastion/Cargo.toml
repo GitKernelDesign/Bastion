@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 bastion-core = { path = "../bastion-core" }
 eframe = { workspace = true }
+rfd = { workspace = true }
 egui = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }

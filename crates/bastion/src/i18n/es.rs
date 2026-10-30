@@ -148,6 +148,7 @@ pub const TR: Tr = Tr {
     clam_scan_path_label: "Ruta a analizar",
     clam_scan_hint: "Ruta absoluta, p. ej. /home/yo/Descargas",
     clam_scan_btn: "Analizar",
+    clam_browse_btn: "Examinar…",
     clam_scan_daemon_note: "Usa el demonio de ClamAV si está activo (rápido), si no, autónomo. Solo lectura: no se modifica ni elimina ningún archivo.",
     clam_scan_found_title: "Archivos infectados",
     clam_scan_clean_toast: "Análisis terminado: ningún archivo infectado",

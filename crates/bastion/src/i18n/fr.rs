@@ -148,6 +148,7 @@ pub const TR: Tr = Tr {
     clam_scan_path_label: "Chemin à analyser",
     clam_scan_hint: "Chemin absolu, ex. /home/moi/Téléchargements",
     clam_scan_btn: "Analyser",
+    clam_browse_btn: "Parcourir…",
     clam_scan_daemon_note: "Via le démon ClamAV quand il est actif (rapide), sinon autonome. Lecture seule : aucun fichier n'est modifié ni supprimé.",
     clam_scan_found_title: "Fichiers infectés",
     clam_scan_clean_toast: "Analyse terminée : aucun fichier infecté",

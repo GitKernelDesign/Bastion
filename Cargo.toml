@@ -18,6 +18,7 @@ nix = { version = "0.31", features = ["net", "user", "fs", "process"] }
 russh = "0.46"
 eframe = "0.37"
 egui = "0.37"
+rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "tokio"] }
 
 [profile.release]
 opt-level = 2

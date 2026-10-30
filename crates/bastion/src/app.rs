@@ -145,6 +145,8 @@ pub struct ClamUi {
     pub db: Option<bastion_core::model::ClamDb>,
     pub db_at: Option<Instant>,
     pub scan_path: String,
+    /// Un sélecteur de dossier est ouvert (désactive les boutons concernés).
+    pub picking: bool,
 }
 
 impl Default for ClamUi {
@@ -157,6 +159,7 @@ impl Default for ClamUi {
             db: None,
             db_at: None,
             scan_path: String::new(),
+            picking: false,
         }
     }
 }
@@ -557,6 +560,13 @@ impl GuiApp {
             }
             Event::Log(entry) => self.push_journal(entry),
             Event::ProbeLocalTools { ufw, fail2ban } => self.probe = (ufw, fail2ban),
+            Event::FolderPicked(Some(path)) => {
+                self.clam.picking = false;
+                self.clam.scan_path = path;
+            }
+            Event::FolderPicked(None) => {
+                self.clam.picking = false;
+            }
         }
     }
 
