@@ -216,6 +216,7 @@ pub const TR: Tr = Tr {
     language_label: "Langue",
     theme_label: "Thème",
     theme_dark: "Sombre",
+    theme_system: "Système",
     theme_light: "Clair",
     text_size_label: "Taille du texte",
     success_toasts_cb: "Notifications de succès (4 s)",

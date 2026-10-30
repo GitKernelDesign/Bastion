@@ -304,6 +304,7 @@ pub struct Tr {
     pub section_appearance: &'static str,
     pub language_label: &'static str,
     pub theme_label: &'static str,
+    pub theme_system: &'static str,
     pub theme_dark: &'static str,
     pub theme_light: &'static str,
     pub text_size_label: &'static str,

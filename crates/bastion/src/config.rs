@@ -7,6 +7,8 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ThemeKind {
+    /// Suit le thème du système (détecté au lancement et en direct).
+    System,
     Dark,
     Light,
 }
@@ -54,7 +56,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         AppConfig {
             language: Lang::detect(),
-            theme: ThemeKind::Dark,
+            theme: ThemeKind::System,
             font_scale: 1.0,
             auto_refresh: true,
             refresh_secs: 5,

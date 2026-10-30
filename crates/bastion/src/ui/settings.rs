@@ -44,7 +44,11 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
             components::segmented(
                 ui,
                 p,
-                &[(ThemeKind::Dark, t.theme_dark), (ThemeKind::Light, t.theme_light)],
+                &[
+                    (ThemeKind::System, t.theme_system),
+                    (ThemeKind::Dark, t.theme_dark),
+                    (ThemeKind::Light, t.theme_light),
+                ],
                 &mut theme,
             );
             if theme != app.cfg.theme {

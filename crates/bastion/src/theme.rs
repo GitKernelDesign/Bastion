@@ -23,8 +23,56 @@ pub struct Palette {
     pub row_alt: Color32,
 }
 
+/// Détecte le thème sombre du système (GNOME / portail freedesktop / GTK_THEME).
+pub fn system_dark() -> bool {
+    // Schéma de couleurs GNOME 42+ : 'prefer-dark' / 'prefer-light' / 'default'.
+    if let Ok(out) = std::process::Command::new("gsettings")
+        .args(["get", "org.gnome.desktop.interface", "color-scheme"])
+        .output()
+    {
+        let v = String::from_utf8_lossy(&out.stdout);
+        if v.contains("prefer-dark") {
+            return true;
+        }
+        if v.contains("prefer-light") {
+            return false;
+        }
+    }
+    // Portail freedesktop standard : 1 = sombre, 2 = clair.
+    if let Ok(out) = std::process::Command::new("gsettings")
+        .args(["get", "org.freedesktop.appearance", "color-scheme"])
+        .output()
+    {
+        if String::from_utf8_lossy(&out.stdout).trim() == "1" {
+            return true;
+        }
+    }
+    // Variable d'environnement GTK (ex. GTK_THEME=Adwaita:dark).
+    if let Some(gtk) = std::env::var_os("GTK_THEME") {
+        if gtk.to_string_lossy().to_lowercase().contains("dark") {
+            return true;
+        }
+    }
+    false
+}
+
+/// Résout « Système » en Dark/Light selon l'OS.
+pub fn resolve(kind: ThemeKind) -> ThemeKind {
+    match kind {
+        ThemeKind::System => {
+            if system_dark() {
+                ThemeKind::Dark
+            } else {
+                ThemeKind::Light
+            }
+        }
+        other => other,
+    }
+}
+
 impl Palette {
     pub fn new(kind: ThemeKind) -> Palette {
+        let kind = resolve(kind);
         if kind == ThemeKind::Light {
             Palette {
                 dark: false,
@@ -74,6 +122,7 @@ pub fn hex(s: &str) -> Color32 {
 /// Applique le style global (palette + espacement + typographie).
 /// Retourne la palette correspondante.
 pub fn apply(ctx: &Context, kind: ThemeKind, font_scale: f32) -> Palette {
+    let kind = resolve(kind);
     let p = Palette::new(kind);
 
     let mut style = Style::default();
@@ -142,7 +191,7 @@ pub fn apply(ctx: &Context, kind: ThemeKind, font_scale: f32) -> Palette {
     // dans le créneau correspondant, puis on active ce créneau.
     let (theme, pref) = match kind {
         ThemeKind::Dark => (egui::Theme::Dark, egui::ThemePreference::Dark),
-        ThemeKind::Light => (egui::Theme::Light, egui::ThemePreference::Light),
+        _ => (egui::Theme::Light, egui::ThemePreference::Light),
     };
     ctx.set_style_of(theme, std::sync::Arc::new(style));
     ctx.set_theme(pref);

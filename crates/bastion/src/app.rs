@@ -8,7 +8,7 @@ use bastion_core::model::*;
 use bastion_core::op::{Op, OpResult, ServiceAction};
 use bastion_core::ssh::SshParams;
 use std::collections::{HashMap, VecDeque};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 pub const JOURNAL_CAP: usize = 500;
 
@@ -301,6 +301,9 @@ pub struct GuiApp {
     pub conn_desc: String,
     pub expect_disconnect: bool,
     pub last_refresh_sent: Option<Instant>,
+    /// Thème effectivement appliqué (résolution de « Système »).
+    pub resolved_theme: crate::config::ThemeKind,
+    pub last_theme_check: Instant,
     pub pending: HashMap<u64, Pending>,
     pub next_id: u64,
     pub journal: VecDeque<LogEntry>,
@@ -331,6 +334,7 @@ impl GuiApp {
         let lang = cfg.language;
         let t = tr(lang);
         crate::theme::apply(&cc.egui_ctx, cfg.theme, cfg.font_scale);
+        let resolved_theme = crate::theme::resolve(cfg.theme);
         let worker = WorkerHandle::spawn();
         worker.send(Job::ProbeLocalTools);
 
@@ -344,6 +348,8 @@ impl GuiApp {
             conn_desc: String::new(),
             expect_disconnect: false,
             last_refresh_sent: None,
+            resolved_theme,
+            last_theme_check: Instant::now(),
             pending: HashMap::new(),
             next_id: 1,
             journal: VecDeque::with_capacity(JOURNAL_CAP),
@@ -732,7 +738,20 @@ impl eframe::App for GuiApp {
 
         self.handle_shortcuts(&ctx);
 
-        let p = crate::theme::Palette::new(self.cfg.theme);
+        // Thème « Système » : on suit le réglage de l'OS en direct.
+        if self.cfg.theme == crate::config::ThemeKind::System {
+            if self.last_theme_check.elapsed() >= Duration::from_secs(2) {
+                self.last_theme_check = Instant::now();
+                let resolved = crate::theme::resolve(self.cfg.theme);
+                if resolved != self.resolved_theme {
+                    self.resolved_theme = resolved;
+                    crate::theme::apply(&ctx, resolved, self.cfg.font_scale);
+                }
+            }
+            ctx.request_repaint_after(Duration::from_secs(2));
+        }
+
+        let p = crate::theme::Palette::new(self.resolved_theme);
         crate::ui::render(self, ui, &p);
 
         if let Some(modal) = self.modal.take() {
