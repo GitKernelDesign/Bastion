@@ -104,4 +104,4 @@ crates/
 
 ## Licence
 
-MIT — voir les en-têtes des crates. Polices [IBM Plex](https://github.com/IBM/plex) (OFL) et [Material Icons](https://github.com/google/material-design-icons) (Apache 2.0) embarquées avec leurs licences respectives.
+GPL-3.0 — voir [LICENSE](LICENSE). Polices [IBM Plex](https://github.com/IBM/plex) (OFL) et [Material Icons](https://github.com/google/material-design-icons) (Apache 2.0) embarquées avec leurs licences respectives.

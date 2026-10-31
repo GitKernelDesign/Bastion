@@ -6,7 +6,7 @@ members = ["crates/bastion-core", "crates/bastion"]
 version = "0.1.0"
 edition = "2021"
 description = "Interface graphique sobre et élégante pour gérer UFW et Fail2Ban, en local ou via SSH"
-license = "MIT"
+license = "GPL-3.0-only"
 
 [workspace.dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "process", "time", "io-util", "sync"] }
