@@ -2,7 +2,14 @@
 
 **Interface graphique simple, sobre et élégante pour gérer intégralement UFW et Fail2Ban — en local ou sur un ordinateur distant via SSH.**
 
-Écrite en Rust pur (interface [egui](https://github.com/emilk/egui), client SSH [russh](https://github.com/Eugeny/russh) embarqué), distribuée en **AppImage** autonome. Interface disponible en **français, anglais, espagnol et allemand** (détection automatique, modifiable dans les réglages).
+Écrite en Rust pur (interface [egui](https://github.com/emilk/egui), client SSH [russh](https://github.com/Eugeny/russh) embarqué), distribuée en **AppImage** autonome. Interface disponible en **huit langues : français, anglais, espagnol, allemand, portugais, italien, ukrainien et russe** (détection automatique, modifiable dans les réglages).
+
+---
+
+## Captures d'écran
+
+![Bastion — capture d'écran 1](screenshots/captureBastion001.png)
+![Bastion — capture d'écran 2](screenshots/captureBastion002.png)
 
 ---
 
@@ -36,7 +43,7 @@
 - Journal intégré : chaque commande exécutée est horodatée et visible (filtres, copie) ;
 - Actualisation automatique (3–60 s), notifications, annulation des bannissements/débannissements ;
 - Thème sombre/clair, taille de texte réglable, raccourcis clavier (`Ctrl+1…5`, `Ctrl+R`, `Ctrl+N`) ;
-- Langue : anglais, français, espagnol, allemand — détectée au premier lancement, persistée.
+- Langue : français, anglais, espagnol, allemand, portugais, italien, ukrainien, russe — détectée au premier lancement, persistée.
 
 ## Sécurité (en bref)
 
