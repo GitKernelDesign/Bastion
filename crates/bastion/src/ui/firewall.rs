@@ -1,6 +1,7 @@
 //! Écran Pare-feu : état, services, politiques, journalisation, ports actifs,
-//! aperçu de commande et règles. Toutes les cartes sont empilées verticalement
-//! en pleine largeur, avec un en-tête uniforme.
+//! aperçu de commande et règles. Les cartes forment une grille responsive
+//! (côte à côte en fenêtre large, empilées en fenêtre étroite), avec un
+//! en-tête uniforme.
 
 use crate::app::{ConfirmData, ConfirmKind, GuiApp, Modal, Pending};
 use crate::components;
@@ -21,17 +22,22 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
         return;
     }
 
-    status_card(app, ui, p);
+    // Grille de tuiles responsive (mobile-first) : côte à côte dès que la
+    // largeur le permet, empilées en fenêtre étroite.
+    components::tile_grid(ui, p, 340.0, 2, |ui, p, i| match i {
+        0 => status_card(app, ui, p),
+        _ => services_card(app, ui, p),
+    });
     ui.add_space(12.0);
-    services_card(app, ui, p);
+    components::tile_grid(ui, p, 300.0, 2, |ui, p, i| match i {
+        0 => policy_card(app, ui, p),
+        _ => logging_card(app, ui, p),
+    });
     ui.add_space(12.0);
-    policy_card(app, ui, p);
-    ui.add_space(12.0);
-    logging_card(app, ui, p);
-    ui.add_space(12.0);
-    ports_card(app, ui, p);
-    ui.add_space(12.0);
-    preview_card(app, ui, p);
+    components::tile_grid(ui, p, 420.0, 2, |ui, p, i| match i {
+        0 => ports_card(app, ui, p),
+        _ => preview_card(app, ui, p),
+    });
     ui.add_space(12.0);
     rules_card(app, ui, p);
     ui.add_space(12.0);
@@ -39,26 +45,69 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     // Actions rares, en bas, en boutons uikit.
     let busy_report = app.pending.values().any(|x| matches!(x, Pending::Report));
     let busy_reload = app.pending.values().any(|x| matches!(x, Pending::Reload));
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
-        let mut report = false;
-        let mut reset = false;
-        let mut reload = false;
-        if components::styled_button_en(
-            ui,
-            p,
-            &format!("{}  {}", crate::icons::TERMINAL, t.report_btn),
-            components::BtnKind::Ghost,
-            !busy_report,
-        )
-        .clicked()
-        {
-            report = true;
-        }
-        if components::danger_button(ui, p, t.reset_btn).clicked() {
-            reset = true;
-        }
-        ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
+    // En fenêtre large, « Recharger » reste aligné à droite ; en fenêtre
+    // étroite les trois boutons se replient à la ligne.
+    if ui.available_width() >= 620.0 {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
+            let mut report = false;
+            let mut reset = false;
+            let mut reload = false;
+            if components::styled_button_en(
+                ui,
+                p,
+                &format!("{}  {}", crate::icons::TERMINAL, t.report_btn),
+                components::BtnKind::Ghost,
+                !busy_report,
+            )
+            .clicked()
+            {
+                report = true;
+            }
+            if components::danger_button(ui, p, t.reset_btn).clicked() {
+                reset = true;
+            }
+            ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
+                if components::styled_button_en(
+                    ui,
+                    p,
+                    &format!("{}  {}", crate::icons::RESTART, t.reload_btn),
+                    components::BtnKind::Ghost,
+                    !busy_reload,
+                )
+                .on_hover_text(t.reload_rules_tooltip)
+                .clicked()
+                {
+                    reload = true;
+                }
+            });
+            if report {
+                app.send_op(Pending::Report, Op::UfwReport);
+            }
+            if reset {
+                app.modal = Some(Modal::ResetFw { typed: String::new() });
+            }
+            if reload {
+                app.send_op(Pending::Reload, Op::UfwReload);
+            }
+        });
+    } else {
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
+            if components::styled_button_en(
+                ui,
+                p,
+                &format!("{}  {}", crate::icons::TERMINAL, t.report_btn),
+                components::BtnKind::Ghost,
+                !busy_report,
+            )
+            .clicked()
+            {
+                app.send_op(Pending::Report, Op::UfwReport);
+            }
+            if components::danger_button(ui, p, t.reset_btn).clicked() {
+                app.modal = Some(Modal::ResetFw { typed: String::new() });
+            }
             if components::styled_button_en(
                 ui,
                 p,
@@ -69,19 +118,10 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
             .on_hover_text(t.reload_rules_tooltip)
             .clicked()
             {
-                reload = true;
+                app.send_op(Pending::Reload, Op::UfwReload);
             }
         });
-        if report {
-            app.send_op(Pending::Report, Op::UfwReport);
-        }
-        if reset {
-            app.modal = Some(Modal::ResetFw { typed: String::new() });
-        }
-        if reload {
-            app.send_op(Pending::Reload, Op::UfwReload);
-        }
-    });
+    }
 }
 
 // ─── Carte état du pare-feu ──────────────────────────────────────────────────
@@ -291,38 +331,39 @@ fn policy_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
             return;
         };
         for dir in [Direction::Incoming, Direction::Outgoing, Direction::Routed] {
-            ui.horizontal(|ui| {
-                let dir_label = match dir {
-                    Direction::Incoming => t.policy_incoming,
-                    Direction::Outgoing => t.policy_outgoing,
-                    Direction::Routed => t.policy_routed,
-                };
-                ui.label(RichText::new(dir_label).size(12.5).color(p.text_secondary));
-                let current = match dir {
-                    Direction::Incoming => st.defaults.incoming.unwrap_or(Policy::Deny),
-                    Direction::Outgoing => st.defaults.outgoing.unwrap_or(Policy::Allow),
-                    Direction::Routed => st.defaults.routed.unwrap_or(Policy::Deny),
-                };
-                let mut sel = current;
+            let dir_label = match dir {
+                Direction::Incoming => t.policy_incoming,
+                Direction::Outgoing => t.policy_outgoing,
+                Direction::Routed => t.policy_routed,
+            };
+            let current = match dir {
+                Direction::Incoming => st.defaults.incoming.unwrap_or(Policy::Deny),
+                Direction::Outgoing => st.defaults.outgoing.unwrap_or(Policy::Allow),
+                Direction::Routed => st.defaults.routed.unwrap_or(Policy::Deny),
+            };
+            // Paramètre responsive : libellé + sélecteur sur la même ligne
+            // si la place suffit, empilés sinon.
+            let mut chosen = current;
+            components::labeled_control(ui, p, dir_label, 360.0, |ui| {
                 egui::ComboBox::from_id_salt(format!("policy-{dir:?}"))
                     .selected_text(t.policy(current))
-                    .width(120.0)
+                    .width(130.0)
                     .show_ui(ui, |ui| {
                         for pol in [Policy::Allow, Policy::Deny, Policy::Reject] {
-                            ui.selectable_value(&mut sel, pol, t.policy(pol));
+                            ui.selectable_value(&mut chosen, pol, t.policy(pol));
                         }
                     });
-                if dir == Direction::Routed && st.defaults.routed_disabled {
-                    ui.label(
-                        RichText::new(t.routed_disabled_note)
-                            .size(10.5)
-                            .color(p.warning),
-                    );
-                }
-                if sel != current {
-                    app.send_op(Pending::Policy(dir), Op::UfwSetDefault { dir, policy: sel });
-                }
             });
+            if dir == Direction::Routed && st.defaults.routed_disabled {
+                ui.label(
+                    RichText::new(t.routed_disabled_note)
+                        .size(10.5)
+                        .color(p.warning),
+                );
+            }
+            if chosen != current {
+                app.send_op(Pending::Policy(dir), Op::UfwSetDefault { dir, policy: chosen });
+            }
         }
         ui.add_space(2.0);
         components::hint(ui, p, t.policy_hint);
@@ -394,17 +435,22 @@ fn ports_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
             components::hint(ui, p, t.ports_empty_hint);
             return;
         }
+        // Tableau responsive : en fenêtre étroite, les colonnes d'adresse
+        // IP et de numéros de règles passent en infobulle.
+        let narrow = ui.available_width() < 520.0;
         egui::Grid::new("ports-table")
             .striped(true)
-            .num_columns(5)
+            .num_columns(if narrow { 3 } else { 5 })
             .min_col_width(10.0)
             .spacing(egui::vec2(16.0, 8.0))
             .show(ui, |ui| {
                 ui.label(header(p, t.col_port));
                 ui.label(header(p, t.col_action));
                 ui.label(header(p, t.col_dir));
-                ui.label(header(p, "IP"));
-                ui.label(header(p, t.col_rules));
+                if !narrow {
+                    ui.label(header(p, "IP"));
+                    ui.label(header(p, t.col_rules));
+                }
                 ui.end_row();
 
                 for (to, action, dir, nums, v6) in &specs {
@@ -418,6 +464,12 @@ fn ports_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                     };
                     components::action_badge(ui, p, label, col);
                     ui.label(RichText::new(t.rule_dir(*dir)).size(12.5));
+                    if narrow {
+                        // L'essentiel reste lisible ; le détail complète
+                        // l'infobulle du port.
+                        ui.end_row();
+                        continue;
+                    }
                     if *v6 {
                         let bg = crate::components::blend(p.accent, p.card, 0.16);
                         components::badge(ui, p, "IPv6", p.accent, bg);
@@ -518,9 +570,9 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 }
             });
             ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing = egui::vec2(10.0, 8.0);
-                ui.label(RichText::new(t.proto_label).size(12.0).color(p.text_secondary));
+            // Sélecteurs segmentés : libellé à gauche si la place suffit,
+            // au-dessus du sélecteur sinon (paramètre responsive).
+            components::labeled_control(ui, p, t.proto_label, 460.0, |ui| {
                 let mut proto = app.add_form.proto;
                 components::segmented(
                     ui,
@@ -530,9 +582,7 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 );
                 app.add_form.proto = proto;
             });
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing = egui::vec2(10.0, 8.0);
-                ui.label(RichText::new(t.dir_label).size(12.0).color(p.text_secondary));
+            components::labeled_control(ui, p, t.dir_label, 460.0, |ui| {
                 let mut dir = app.add_form.dir;
                 components::segmented(
                     ui,
@@ -542,9 +592,7 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 );
                 app.add_form.dir = dir;
             });
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing = egui::vec2(10.0, 8.0);
-                ui.label(RichText::new(t.action_label).size(12.0).color(p.text_secondary));
+            components::labeled_control(ui, p, t.action_label, 520.0, |ui| {
                 let mut action = app.add_form.action;
                 components::segmented(
                     ui,
@@ -602,10 +650,13 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
             // ── Recherche + liste des règles ──
             ui.horizontal(|ui| {
                 ui.label(crate::icons::icon(crate::icons::SEARCH));
+                // Champ de recherche fluide : il occupe l'espace restant,
+                // l'ancienneté restant visible à droite.
+                let search_w = (ui.available_width() - 170.0).clamp(120.0, 300.0);
                 ui.add(
                     egui::TextEdit::singleline(&mut app.firewall.search)
                         .hint_text(t.search_placeholder)
-                        .desired_width(280.0),
+                        .desired_width(search_w),
                 );
                 ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
                     if let Some(at) = app.firewall.rules_at {
@@ -648,20 +699,26 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 .min_scrolled_height(list_h)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    // 6 colonnes : la colonne commentaire n'est plus affichée
-                    // (le commentaire reste dans l'infobulle de suppression).
+                    // Tableau responsive : en fenêtre étroite, les colonnes
+                    // « De » et « IP » passent en infobulle (6 ou 4 colonnes ;
+                    // le commentaire reste dans l'infobulle de suppression).
+                    let narrow = ui.available_width() < 640.0;
                     egui::Grid::new("rules-table")
                         .striped(true)
-                        .num_columns(7)
+                        .num_columns(if narrow { 5 } else { 7 })
                         .min_col_width(10.0)
                         .spacing(egui::vec2(14.0, 8.0))
                         .show(ui, |ui| {
                             ui.label(header(p, "#"));
                             ui.label(header(p, t.col_action));
-                            ui.label(header(p, t.col_from));
+                            if !narrow {
+                                ui.label(header(p, t.col_from));
+                            }
                             ui.label(header(p, t.col_to_port));
                             ui.label(header(p, t.col_dir));
-                            ui.label(header(p, "IP"));
+                            if !narrow {
+                                ui.label(header(p, "IP"));
+                            }
                             ui.label(header(p, ""));
                             ui.end_row();
 
@@ -674,17 +731,27 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                                     RuleAction::Limit => (p.accent, t.action_limit),
                                 };
                                 components::action_badge(ui, p, label, color);
-                                ui.label(RichText::new(ellipsize(&rule.from, 30)).monospace())
-                                    .on_hover_text(&rule.from);
-                                ui.label(RichText::new(ellipsize(&rule.to, 30)).monospace())
-                                    .on_hover_text(&rule.to);
-                                ui.label(RichText::new(t.rule_dir(rule.dir)).size(12.0).color(p.text_secondary));
-                                // Badge IPv4/IPv6 dédié : lecture immédiate du type d'adresse.
-                                if rule.ipv6 {
-                                    let bg = crate::components::blend(p.accent, p.card, 0.16);
-                                    components::badge(ui, p, "IPv6", p.accent, bg);
+                                if !narrow {
+                                    ui.label(RichText::new(ellipsize(&rule.from, 30)).monospace())
+                                        .on_hover_text(&rule.from);
+                                }
+                                let port_label = RichText::new(ellipsize(&rule.to, 30)).monospace();
+                                if narrow {
+                                    // La source reste consultable en infobulle.
+                                    ui.label(port_label)
+                                        .on_hover_text(format!("{}\n← {}", rule.to, rule.from));
                                 } else {
-                                    components::badge(ui, p, "IPv4", p.text_secondary, p.card_hover);
+                                    ui.label(port_label).on_hover_text(&rule.to);
+                                }
+                                ui.label(RichText::new(t.rule_dir(rule.dir)).size(12.0).color(p.text_secondary));
+                                if !narrow {
+                                    // Badge IPv4/IPv6 dédié : lecture immédiate du type d'adresse.
+                                    if rule.ipv6 {
+                                        let bg = crate::components::blend(p.accent, p.card, 0.16);
+                                        components::badge(ui, p, "IPv6", p.accent, bg);
+                                    } else {
+                                        components::badge(ui, p, "IPv4", p.text_secondary, p.card_hover);
+                                    }
                                 }
                                 let mut desc = format!(
                                     "#{} — {} {} ({})",

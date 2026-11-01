@@ -20,10 +20,12 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
         return;
     }
 
-    // Toutes les cartes empilées verticalement, en pleine largeur.
-    service_card(app, ui, p);
-    ui.add_space(12.0);
-    summary_card(app, ui, p);
+    // Grille responsive : état du service et synthèse côte à côte en fenêtre
+    // large, empilés en fenêtre étroite.
+    components::tile_grid(ui, p, 340.0, 2, |ui, p, i| match i {
+        0 => service_card(app, ui, p),
+        _ => summary_card(app, ui, p),
+    });
     ui.add_space(12.0);
     jails_card(app, ui, p);
     if let Some(jail) = app.f2b.selected_jail.clone() {
@@ -173,6 +175,9 @@ fn jails_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 components::empty_state(ui, p, t.jails_empty, t.jails_empty_hint);
                 return;
             }
+            // Tableau responsive : en fenêtre étroite, les durées
+            // (bantime / findtime) passent en infobulle.
+            let narrow = ui.available_width() < 620.0;
             let jails_h = (28.0 + 28.0 * jails.len() as f32).clamp(120.0, 460.0);
             egui::ScrollArea::vertical()
                 .max_height(jails_h)
@@ -181,19 +186,22 @@ fn jails_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 .show(ui, |ui| {
                     egui::Grid::new("jails-table")
                         .striped(true)
-                        .num_columns(6)
+                        .num_columns(if narrow { 3 } else { 6 })
                         .spacing(egui::vec2(16.0, 8.0))
                         .show(ui, |ui| {
                             ui.label(header(p, t.col_jail));
                             ui.label(header(p, t.col_banned));
                             ui.label(header(p, t.col_failed));
-                            ui.label(header(p, "bantime"));
-                            ui.label(header(p, "findtime"));
-                            ui.label(header(p, ""));
+                            if !narrow {
+                                ui.label(header(p, "bantime"));
+                                ui.label(header(p, "findtime"));
+                                ui.label(header(p, ""));
+                            }
                             ui.end_row();
 
                             for jail in &jails {
                                 let selected = app.f2b.selected_jail.as_deref() == Some(jail.as_str());
+                                let info = app.f2b.jail_infos.get(jail).cloned();
                                 if ui
                                     .add(
                                         egui::Button::new(
@@ -203,33 +211,49 @@ fn jails_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                                         )
                                         .fill(egui::Color32::TRANSPARENT),
                                     )
+                                    .on_hover_text(match &info {
+                                        Some((i, _)) => format!(
+                                            "bantime : {}\nfindtime : {}",
+                                            i.bantime.as_deref().unwrap_or("—"),
+                                            i.findtime.as_deref().unwrap_or("—"),
+                                        ),
+                                        None => jail.clone(),
+                                    })
                                     .clicked()
                                 {
                                     app.f2b.selected_jail = Some(jail.clone());
                                     app.send_op(Pending::RefreshJail, Op::F2bJail { jail: jail.clone() });
                                 }
-                                if let Some((info, _)) = app.f2b.jail_infos.get(jail) {
-                                    ui.label(opt_u64(info.currently_banned));
-                                    ui.label(opt_u64(info.currently_failed));
-                                    ui.label(
-                                        RichText::new(
-                                            info.bantime.as_deref().map(humanize_duration).unwrap_or_default(),
-                                        )
-                                        .size(12.5),
-                                    );
-                                    ui.label(
-                                        RichText::new(
-                                            info.findtime.as_deref().map(humanize_duration).unwrap_or_default(),
-                                        )
-                                        .size(12.5),
-                                    );
-                                } else {
-                                    ui.label(RichText::new("…").weak());
-                                    ui.label(RichText::new("…").weak());
-                                    ui.label(RichText::new("…").weak());
-                                    ui.label(RichText::new("…").weak());
+                                match &info {
+                                    Some((info, _)) => {
+                                        ui.label(opt_u64(info.currently_banned));
+                                        ui.label(opt_u64(info.currently_failed));
+                                        if !narrow {
+                                            ui.label(
+                                                RichText::new(
+                                                    info.bantime.as_deref().map(humanize_duration).unwrap_or_default(),
+                                                )
+                                                .size(12.5),
+                                            );
+                                            ui.label(
+                                                RichText::new(
+                                                    info.findtime.as_deref().map(humanize_duration).unwrap_or_default(),
+                                                )
+                                                .size(12.5),
+                                            );
+                                            ui.label(RichText::new(""));
+                                        }
+                                    }
+                                    None => {
+                                        ui.label(RichText::new("…").weak());
+                                        ui.label(RichText::new("…").weak());
+                                        if !narrow {
+                                            ui.label(RichText::new("…").weak());
+                                            ui.label(RichText::new("…").weak());
+                                            ui.label(RichText::new(""));
+                                        }
+                                    }
                                 }
-                                ui.label(RichText::new(""));
                                 ui.end_row();
                             }
                         });
@@ -280,7 +304,10 @@ fn jail_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette, jail: &str) {
             }
         },
         |ui| {
-            ui.horizontal(|ui| {
+            // Statistiques en flux replié : les paires libellé/valeur passent
+            // à la ligne quand la largeur manque.
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(8.0, 6.0);
                 ui.label(RichText::new(t.current_failures_label).size(12.5).color(p.text_secondary));
                 ui.label(opt_u64(info.currently_failed));
                 ui.label(RichText::new(t.total_label).size(12.5).color(p.text_secondary));
@@ -289,12 +316,10 @@ fn jail_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette, jail: &str) {
                 ui.label(
                     RichText::new(info.maxretry.clone().unwrap_or_else(|| "—".into())).monospace(),
                 );
-                ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                    components::since_label(ui, p, t, at);
-                });
+                components::since_label(ui, p, t, at);
             });
             if let Some(files) = &info.file_list {
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label(RichText::new(t.watches_label).size(12.5).color(p.text_secondary));
                     ui.label(RichText::new(components::ellipsize(files, 60)).monospace())
                         .on_hover_text(files);
@@ -302,12 +327,14 @@ fn jail_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette, jail: &str) {
             }
             ui.add_space(8.0);
 
-            // Bannissement manuel.
-            ui.horizontal(|ui| {
+            // Bannissement manuel : le champ occupe l'espace restant, le
+            // bouton passe à la ligne en fenêtre étroite.
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(8.0, 6.0);
                 let ok_ip = bastion_core::ufw::is_valid_addr(app.f2b.ban_input.trim());
                 let edit = egui::TextEdit::singleline(&mut app.f2b.ban_input)
                     .hint_text(t.ban_input_hint)
-                    .desired_width(240.0)
+                    .desired_width((ui.available_width() - 130.0).clamp(160.0, 240.0))
                     .font(egui::TextStyle::Monospace);
                 let resp = ui.add(edit);
                 if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && ok_ip {

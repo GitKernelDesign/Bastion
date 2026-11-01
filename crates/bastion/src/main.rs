@@ -109,7 +109,10 @@ fn launch_gui() {
         viewport: egui::ViewportBuilder::default()
             .with_title(title)
             .with_inner_size([1280.0, 820.0])
-            .with_min_inner_size([1000.0, 640.0])
+            // Interface mobile-first : la fenêtre peut être réduite à la
+            // taille d'un téléphone ; la disposition s'adapte (navigation
+            // basse, une colonne) sous 720 px de large.
+            .with_min_inner_size([360.0, 480.0])
             .with_icon(std::sync::Arc::new(icon)),
         ..Default::default()
     };

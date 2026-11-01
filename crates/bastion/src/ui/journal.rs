@@ -12,53 +12,28 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     ui.add_space(6.0);
 
     components::card_body(ui, p, |ui| {
-        ui.horizontal(|ui| {
-            for (f, label) in [
-                (LogFilter::All, t.filter_all),
-                (LogFilter::Errors, t.filter_errors),
-                (LogFilter::Fw, t.filter_fw),
-                (LogFilter::F2b, t.filter_f2b),
-            ] {
-                let sel = app.filter == f;
-                let btn = egui::Button::new(
-                    RichText::new(label).size(12.5).color(if sel {
-                        egui::Color32::WHITE
-                    } else {
-                        p.text_secondary
-                    }),
-                )
-                .fill(if sel { p.accent } else { p.card_hover });
-                if ui.add(btn).clicked() {
-                    app.filter = f;
-                }
-            }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-                if ui.add(egui::Button::new(RichText::new(t.clear_btn).size(12.5))).clicked() {
-                    app.journal.clear();
-                }
-                if ui
-                    .add(egui::Button::new(components::btn_icon_text(crate::icons::COPY, t.copy_btn)))
-                    .on_hover_text(t.copy_tooltip)
-                    .clicked()
-                {
-                    let all: Vec<String> = app
-                        .journal
-                        .iter()
-                        .map(|e| {
-                            format!(
-                                "{} {} {} code={}",
-                                fmt_time(e.at),
-                                if e.ok { "OK  " } else { "ERR " },
-                                e.command,
-                                e.code
-                            )
-                        })
-                        .collect();
-                    ui.ctx().copy_text(all.join("\n"));
-                    app.toasts.info(t.journal_copied_toast.to_string());
-                }
+        // Rangée de filtres : les actions (copier, vider) restent à droite
+        // en fenêtre large, et passent sous les filtres en fenêtre étroite.
+        let wide = ui.available_width() >= 640.0;
+        if wide {
+            ui.horizontal(|ui| {
+                filter_buttons(app, ui, p, t);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                    journal_actions(app, ui, t);
+                });
             });
-        });
+        } else {
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
+                filter_buttons(app, ui, p, t);
+            });
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                    journal_actions(app, ui, t);
+                });
+            });
+        }
         ui.add_space(4.0);
 
         if app.journal.is_empty() {
@@ -123,6 +98,57 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                     });
             });
     });
+}
+
+/// Boutons de filtre du journal (tous, erreurs, pare-feu, fail2ban).
+fn filter_buttons(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette, t: &crate::i18n::Tr) {
+    for (f, label) in [
+        (LogFilter::All, t.filter_all),
+        (LogFilter::Errors, t.filter_errors),
+        (LogFilter::Fw, t.filter_fw),
+        (LogFilter::F2b, t.filter_f2b),
+    ] {
+        let sel = app.filter == f;
+        let btn = egui::Button::new(
+            RichText::new(label).size(12.5).color(if sel {
+                egui::Color32::WHITE
+            } else {
+                p.text_secondary
+            }),
+        )
+        .fill(if sel { p.accent } else { p.card_hover });
+        if ui.add(btn).clicked() {
+            app.filter = f;
+        }
+    }
+}
+
+/// Actions du journal : vider (à droite) et copier.
+fn journal_actions(app: &mut GuiApp, ui: &mut egui::Ui, t: &crate::i18n::Tr) {
+    if ui.add(egui::Button::new(RichText::new(t.clear_btn).size(12.5))).clicked() {
+        app.journal.clear();
+    }
+    if ui
+        .add(egui::Button::new(components::btn_icon_text(crate::icons::COPY, t.copy_btn)))
+        .on_hover_text(t.copy_tooltip)
+        .clicked()
+    {
+        let all: Vec<String> = app
+            .journal
+            .iter()
+            .map(|e| {
+                format!(
+                    "{} {} {} code={}",
+                    fmt_time(e.at),
+                    if e.ok { "OK  " } else { "ERR " },
+                    e.command,
+                    e.code
+                )
+            })
+            .collect();
+        ui.ctx().copy_text(all.join("\n"));
+        app.toasts.info(t.journal_copied_toast.to_string());
+    }
 }
 
 fn is_firewall_line(cmd: &str) -> bool {

@@ -32,6 +32,7 @@
 - **SSH** : mot de passe ou clé privée (avec phrase secrète), profils enregistrés, préfixe `sudo` optionnel, validation de la clé du serveur à la première connexion (TOFU) et alerte si elle change.
 
 ### Confort
+- **Interface responsive mobile-first** : sous 720 px de large (fenêtre réduite, petit écran), la navigation passe en bas d'écran, les tuiles s'empilent en une colonne et les tableaux masquent leurs colonnes secondaires ; plus large, les cartes forment une grille multi-colonnes et la navigation devient une barre latérale ;
 - Journal intégré : chaque commande exécutée est horodatée et visible (filtres, copie) ;
 - Actualisation automatique (3–60 s), notifications, annulation des bannissements/débannissements ;
 - Thème sombre/clair, taille de texte réglable, raccourcis clavier (`Ctrl+1…5`, `Ctrl+R`, `Ctrl+N`) ;
@@ -53,8 +54,8 @@ L'ergonomie complète (personas, parcours, système de design, décisions refus�
 
 ```bash
 # Rendre exécutable puis lancer :
-chmod +x Bastion-0.1.0-x86_64.AppImage
-./Bastion-0.1.0-x86_64.AppImage
+chmod +x Bastion-0.1.1-x86_64.AppImage
+./Bastion-0.1.1-x86_64.AppImage
 ```
 
 - **Cet ordinateur** → *Se connecter* → saisissez votre mot de passe une fois (agent polkit de votre bureau) ;
@@ -62,15 +63,17 @@ chmod +x Bastion-0.1.0-x86_64.AppImage
 
 La langue se choisit dans **Réglages → Apparence → Langue** (FR / EN / ES / DE) ; la détection initiale suit `LANG`/`LC_MESSAGES`.
 
+> **GLIBC / Debian 13** — l'AppImage est compilé sur **Debian 13 stable (glibc 2.41)** et fonctionne sur toute distribution dotée de glibc ≥ 2.41. L'erreur `version 'GLIBC_2.43' not found` venait d'un binaire compilé sur une distribution plus récente : reconstruisez toujours l'AppImage **sur la machine (ou la distribution) cible la plus ancienne** avec `./packaging/build.sh` — le script vérifie désormais automatiquement que le binaire n'exige pas un glibc plus récent que le système hôte.
+
 ## Compilation depuis les sources
 
 ```bash
 # Prérequis : Rust (rustup), gcc (paquet build-essential)
 cargo build --release            # binaire : target/release/bastion
-cargo test                       # 28 tests unitaires (parseurs, whitelist, protocole, i18n)
+cargo test                       # tests unitaires (parseurs, whitelist, protocole, i18n, mise en page responsive)
 
 # AppImage complet :
-./packaging/build.sh             # → dist/Bastion-0.1.0-x86_64.AppImage
+./packaging/build.sh             # → dist/Bastion-0.1.1-x86_64.AppImage
 ```
 
 ## Architecture

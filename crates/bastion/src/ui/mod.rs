@@ -1,4 +1,8 @@
-//! Mise en page globale : barre latérale, barre supérieure, barre d'état.
+//! Mise en page globale : coquille responsive mobile-first.
+//!
+//! Fenêtre étroite (< `COMPACT_MAX_WIDTH`) : barre supérieure + contenu en
+//! une colonne + navigation en bas d'écran (usage tactile/compact).
+//! Fenêtre large : barre latérale de 216 px, barre supérieure, barre d'état.
 
 pub mod clamav;
 pub mod connect;
@@ -14,15 +18,27 @@ use egui::{Align, Color32, Layout, Margin, RichText};
 
 /// Rendu complet d'une frame.
 pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
-    topbar(app, ui, p);
-    statusbar(app, ui, p);
-    sidebar(app, ui, p);
+    // Mobile-first : la disposition se décide à chaque frame selon la
+    // largeur réelle de la fenêtre.
+    let compact = components::is_compact(ui.ctx().input(|i| i.viewport_rect().width()));
+    topbar(app, ui, p, compact);
+
+    if compact {
+        // La navigation basse est appelée en premier : le premier panneau
+        // déclaré en bas occupe le bord inférieur, la barre d'état passe
+        // juste au-dessus.
+        bottom_nav(app, ui, p);
+        statusbar(app, ui, p, compact);
+    } else {
+        statusbar(app, ui, p, compact);
+        sidebar(app, ui, p);
+    }
 
     egui::CentralPanel::default_margins()
         .frame(
             egui::Frame::NONE
                 .fill(p.bg)
-                .inner_margin(Margin::same(20)),
+                .inner_margin(Margin::same(if compact { 12 } else { 20 })),
         )
         .show(ui, |ui| {
             egui::ScrollArea::vertical()
@@ -38,12 +54,24 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
         });
 }
 
+/// Écrans de navigation (partagés entre la barre latérale et la barre basse).
+fn nav_entries(t: &crate::i18n::Tr) -> [(Screen, &'static str, &'static str); 6] {
+    [
+        (Screen::Connect, icons::LOGIN, t.nav_connect),
+        (Screen::Firewall, icons::SECURITY, t.nav_firewall),
+        (Screen::Fail2Ban, icons::BAN, t.nav_fail2ban),
+        (Screen::Antivirus, icons::GPP_GOOD, t.nav_clamav),
+        (Screen::Journal, icons::HISTORY, t.nav_journal),
+        (Screen::Settings, icons::SETTINGS, t.nav_settings),
+    ]
+}
+
 // ─── Barre supérieure ────────────────────────────────────────────────────────
-fn topbar(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
+fn topbar(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette, compact: bool) {
     let t = app.tr;
     egui::Panel::top("topbar")
         .exact_size(52.0)
-        .frame(egui::Frame::NONE.fill(p.bg_alt).inner_margin(Margin{ left: 20, right: 20, top: 8, bottom: 8 }))
+        .frame(egui::Frame::NONE.fill(p.bg_alt).inner_margin(Margin{ left: if compact { 12 } else { 20 }, right: if compact { 12 } else { 20 }, top: 8, bottom: 8 }))
         .show(ui, |ui| {
             ui.horizontal_centered(|ui| {
                 let (color, dot_icon, label) = match app.phase {
@@ -56,11 +84,15 @@ fn topbar(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                     ConnPhase::Disconnected => (p.text_secondary, icons::GPP_BAD, t.status_disconnected.to_string()),
                 };
                 ui.label(icons::icon_sz(dot_icon, 18.0, color));
+                // En mode compact, le libellé d'état est coupé proprement :
+                // le texte intégral reste en infobulle.
+                let shown = if compact { components::ellipsize(&label, 24) } else { label.clone() };
                 ui.label(
-                    RichText::new(label)
+                    RichText::new(shown)
                         .size(13.0)
                         .family(egui::FontFamily::Name("Medium".into())),
-                );
+                )
+                .on_hover_text(label);
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let refreshing = app.is_refreshing();
@@ -74,17 +106,22 @@ fn topbar(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                         app.refresh_all();
                     }
 
-                    let mut auto = app.cfg.auto_refresh;
-                    if ui
-                        .add_enabled(
-                            app.phase == ConnPhase::Connected,
-                            egui::Checkbox::new(&mut auto, RichText::new(t.topbar_auto).size(12.5)),
-                        )
-                        .on_hover_text(t.tooltip_auto)
-                        .changed()
-                    {
-                        app.cfg.auto_refresh = auto;
-                        app.cfg.save();
+                    // La bascule d'actualisation tient sur la largeur du
+                    // libellé : cachée en mode compact (elle reste dans
+                    // Réglages), pour ne pas pousser le bouton hors écran.
+                    if !compact {
+                        let mut auto = app.cfg.auto_refresh;
+                        if ui
+                            .add_enabled(
+                                app.phase == ConnPhase::Connected,
+                                egui::Checkbox::new(&mut auto, RichText::new(t.topbar_auto).size(12.5)),
+                            )
+                            .on_hover_text(t.tooltip_auto)
+                            .changed()
+                        {
+                            app.cfg.auto_refresh = auto;
+                            app.cfg.save();
+                        }
                     }
                 });
             });
@@ -119,14 +156,8 @@ fn sidebar(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
             ui.add_space(14.0);
             ui.spacing_mut().item_spacing = egui::vec2(8.0, 4.0);
 
-            let entries = [
-                (Screen::Connect, icons::LOGIN, t.nav_connect),
-                (Screen::Firewall, icons::SECURITY, t.nav_firewall),
-                (Screen::Fail2Ban, icons::BAN, t.nav_fail2ban),
-                (Screen::Antivirus, icons::GPP_GOOD, t.nav_clamav),
-                (Screen::Journal, icons::HISTORY, t.nav_journal),
-                (Screen::Settings, icons::SETTINGS, t.nav_settings),
-            ];
+            // Uniquement en fenêtre large : la barre latérale.
+            let entries = nav_entries(t);
             let _ = nav_list(ui, p, &entries, &mut app.screen);
 
             ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
@@ -195,12 +226,13 @@ fn nav_item(ui: &mut egui::Ui, p: &Palette, screen: Screen, icon: &str, label: &
 }
 
 // ─── Barre d'état ────────────────────────────────────────────────────────────
-fn statusbar(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
+fn statusbar(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette, compact: bool) {
     let t = app.tr;
     let pending = app.pending.len();
+    let pad = if compact { 12 } else { 20 };
     egui::Panel::bottom("statusbar")
         .exact_size(26.0)
-        .frame(egui::Frame::NONE.fill(p.bg_alt).inner_margin(Margin{ left: 20, right: 20, top: 4, bottom: 4 }))
+        .frame(egui::Frame::NONE.fill(p.bg_alt).inner_margin(Margin{ left: pad, right: pad, top: 4, bottom: 4 }))
         .show(ui, |ui| {
             ui.horizontal_centered(|ui| {
                 if pending > 0 {
@@ -213,8 +245,9 @@ fn statusbar(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 } else if !app.status_msg.is_empty() {
                     // Coupe proprement : le texte intégral est dans le toast
                     // et le journal.
-                    let msg: String = app.status_msg.chars().take(110).collect();
-                    let msg = if app.status_msg.chars().count() > 110 {
+                    let take = if compact { 46 } else { 110 };
+                    let msg: String = app.status_msg.chars().take(take).collect();
+                    let msg = if app.status_msg.chars().count() > take {
                         format!("{msg}…")
                     } else {
                         msg
@@ -231,14 +264,103 @@ fn statusbar(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                     if let (Some(at), true) = (app.firewall.status_at, app.phase == ConnPhase::Connected) {
                         components::since_label(ui, p, t, at);
                     }
-                    ui.label(
-                        RichText::new(t.shortcut_hint)
-                            .size(10.5)
-                            .color(p.text_secondary),
-                    );
+                    // Les raccourcis clavier n'ont pas de sens au doigt :
+                    // cachés en mode compact.
+                    if !compact {
+                        ui.label(
+                            RichText::new(t.shortcut_hint)
+                                .size(10.5)
+                                .color(p.text_secondary),
+                        );
+                    }
                 });
             });
         });
+}
+
+// ─── Navigation basse (mode compact) ────────────────────────────────────────
+/// Barre de navigation basse d'écran (icône + libellé), visible en fenêtre
+/// étroite à la place de la barre latérale.
+fn bottom_nav(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
+    let entries = nav_entries(app.tr);
+    egui::Panel::bottom("bottomnav")
+        .exact_size(62.0)
+        .frame(egui::Frame::NONE.fill(p.bg_alt).inner_margin(Margin{ left: 6, right: 6, top: 6, bottom: 6 }))
+        .show(ui, |ui| {
+            bottom_nav_list(ui, p, &entries, &mut app.screen);
+        });
+}
+
+/// Liste de navigation basse (extraite pour être testée).
+/// Chaque item reçoit une largeur égale et entière : 1/n-ième de l'écran.
+pub fn bottom_nav_list(
+    ui: &mut egui::Ui,
+    p: &Palette,
+    entries: &[(Screen, &str, &str)],
+    current: &mut Screen,
+) -> Vec<egui::Rect> {
+    let n = entries.len().max(1);
+    let item_w = (ui.available_width() / n as f32).max(46.0);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
+        entries
+            .iter()
+            .map(|(screen, icon, label)| {
+                bottom_nav_item(ui, p, *screen, icon, label, current, item_w)
+            })
+            .collect::<Vec<egui::Rect>>()
+    })
+    .inner
+}
+
+fn bottom_nav_item(
+    ui: &mut egui::Ui,
+    p: &Palette,
+    screen: Screen,
+    icon: &str,
+    label: &str,
+    current: &mut Screen,
+    item_w: f32,
+) -> egui::Rect {
+    let selected = *current == screen;
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(item_w, 50.0), egui::Sense::click());
+    resp.widget_info(|| {
+        egui::WidgetInfo::selected(egui::Role::Tab, true, selected, label)
+    });
+    let fill = if selected {
+        crate::components::blend(p.accent, p.bg_alt, 0.15)
+    } else if resp.hovered() {
+        p.card_hover
+    } else {
+        Color32::TRANSPARENT
+    };
+    ui.painter().rect(rect, egui::CornerRadius::same(10), fill, egui::Stroke::NONE, egui::StrokeKind::Inside);
+    let fg = if selected { p.accent } else { p.text_secondary };
+    // Icône et libellé empilés, centrés horizontalement.
+    let icon_g = ui.painter().layout_no_wrap(
+        icon.to_string(),
+        egui::FontId::new(19.0, egui::FontFamily::Name("Icon".into())),
+        fg,
+    );
+    let label_g = ui.painter().layout_no_wrap(
+        label.to_string(),
+        egui::FontId::new(9.5, egui::FontFamily::Name("Medium".into())),
+        fg,
+    );
+    let icon_pos = egui::pos2(
+        rect.center().x - icon_g.size().x * 0.5,
+        rect.top() + 5.0,
+    );
+    let label_pos = egui::pos2(
+        rect.center().x - label_g.size().x * 0.5,
+        rect.bottom() - label_g.size().y - 5.0,
+    );
+    ui.painter().galley(icon_pos, icon_g.clone(), fg);
+    ui.painter().galley(label_pos, label_g, fg);
+    if resp.clicked() {
+        *current = screen;
+    }
+    rect
 }
 
 use crate::components;
@@ -359,5 +481,54 @@ mod tests {
             inner_h >= 899.0,
             "hauteur de la zone imbriquée attendue ~900, vue {inner_h}"
         );
+    }
+    /// Navigation basse (mode compact) : les 6 items se répartissent la
+    /// largeur, restent dans l'écran et ne se chevauchent pas — y compris
+    /// sur un écran de téléphone.
+    #[test]
+    fn nav_basse_repartie_la_largeur_dans_l_ecran() {
+        let ctx = egui::Context::default();
+        crate::fonts::install(&ctx);
+        let p = Palette::new(ThemeKind::Dark);
+        let entries = nav_entries(crate::i18n::tr(crate::i18n::Lang::Fr));
+        for w in [360.0, 480.0, 719.9] {
+            assert!(crate::components::is_compact(w), "{w} px doit être compact");
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w, 640.0));
+            ctx.begin_pass(egui::RawInput {
+                screen_rect: Some(screen),
+                ..Default::default()
+            });
+            let mut current = Screen::Firewall;
+            let rects = ctx.root_ui(|ui| {
+                egui::Panel::bottom("bottomnav")
+                    .exact_size(62.0)
+                    .frame(egui::Frame::NONE.fill(p.bg_alt).inner_margin(Margin{ left: 6, right: 6, top: 6, bottom: 6 }))
+                    .show(ui, |ui| bottom_nav_list(ui, &p, &entries, &mut current))
+                    .inner
+            });
+            let mut output = ctx.end_pass();
+            output.textures_delta.clear();
+
+            assert_eq!(rects.len(), 6, "6 items attendus (largeur {w})");
+            for r in &rects {
+                assert!(
+                    r.left() >= -1.0 && r.right() <= screen.width() + 1.0,
+                    "item de navigation hors écran (largeur {w}) : {r:?}"
+                );
+                assert!((r.height() - 50.0).abs() < 0.5, "hauteur item : {r:?}");
+            }
+            for pair in rects.windows(2) {
+                assert!(
+                    pair[1].left() >= pair[0].right() - 0.5,
+                    "chevauchement horizontal : {rects:?}"
+                );
+            }
+            // Les items se répartissent toute la largeur disponible.
+            let total: f32 = rects.iter().map(|r| r.width()).sum();
+            assert!(
+                total >= w - 14.0,
+                "les items doivent occuper la largeur ({total:.1} sur {w})"
+            );
+        }
     }
 }

@@ -513,3 +513,237 @@ pub fn modal_title(ui: &mut Ui, _p: &Palette, title: &str) {
     ui.add_space(8.0);
 }
 
+// ─── Mise en page responsive (mobile-first) ──────────────────────────────────
+//
+// Toute l'interface est conçue d'abord pour un écran étroit (une colonne,
+// navigation basse), puis s'enrichit quand la fenêtre s'élargit : les tuiles
+// passent côte à côte et la navigation migre en barre latérale.
+
+/// Largeur de fenêtre au-dessous de laquelle Bastion adopte la présentation
+/// compacte (mobile) : navigation en bas d'écran, tuiles empilées.
+pub const COMPACT_MAX_WIDTH: f32 = 720.0;
+
+/// Gouttière horizontale entre colonnes de tuiles. Doit rester égale à
+/// `style.spacing.item_spacing.x` (8 px) : c'est la valeur qu'egui utilise
+/// entre les colonnes de `Ui::columns`.
+pub const TILE_GAP_X: f32 = 8.0;
+
+/// Espacement vertical entre deux rangées de tuiles.
+pub const TILE_GAP_Y: f32 = 12.0;
+
+/// L'interface est-elle en mode compact (fenêtre étroite / mobile) ?
+pub fn is_compact(width: f32) -> bool {
+    width < COMPACT_MAX_WIDTH
+}
+
+/// Nombre de colonnes de tuiles pouvant tenir dans `avail` (au moins une) :
+/// chaque colonne doit mesurer au moins `min_tile_w`, gouttières comprises.
+/// Fonction pure — testée unitairement.
+pub fn tile_cols(avail: f32, min_tile_w: f32, max_cols: usize) -> usize {
+    let mut cols = 1usize;
+    for cand in 1..=max_cols {
+        let per_col = (avail - TILE_GAP_X * (cand - 1) as f32) / cand as f32;
+        if per_col >= min_tile_w {
+            cols = cand;
+        }
+    }
+    cols
+}
+
+/// Grille de tuiles responsive : les `tiles` tuiles se placent côte à côte
+/// tant que la largeur le permet (au moins `min_tile_w` chacune), puis
+/// passent à la ligne ; en fenêtre étroite tout s'empile sur une colonne.
+/// `render` est appelé exactement une fois par tuile, avec l'ui de la
+/// tuile et son index.
+pub fn tile_grid(
+    ui: &mut Ui,
+    p: &Palette,
+    min_tile_w: f32,
+    tiles: usize,
+    mut render: impl FnMut(&mut Ui, &Palette, usize),
+) {
+    if tiles == 0 {
+        return;
+    }
+    let avail = ui.available_width();
+    let cols = tile_cols(avail, min_tile_w, tiles).min(tiles);
+    let mut i = 0usize;
+    while i < tiles {
+        let row = cols.min(tiles - i);
+        if row <= 1 {
+            // Une seule tuile : pleine largeur, rendue directement.
+            render(ui, p, i);
+        } else {
+            ui.columns(row, |cols_ui| {
+                for (j, col) in cols_ui.iter_mut().enumerate() {
+                    render(col, p, i + j);
+                }
+            });
+        }
+        i += row;
+        if i < tiles {
+            ui.add_space(TILE_GAP_Y);
+        }
+    }
+}
+
+/// Paramètre d'interface « libellé + contrôle » : sur une même ligne tant
+/// que la largeur disponible atteint `min_inline_w`, sinon empilés
+/// (libellé au-dessus, contrôle pleine largeur). C'est la brique
+/// responsive de chaque paramètre des écrans.
+pub fn labeled_control(
+    ui: &mut Ui,
+    p: &Palette,
+    label: &str,
+    min_inline_w: f32,
+    add: impl FnOnce(&mut Ui),
+) {
+    let label_text = RichText::new(label)
+        .size(12.5)
+        .color(p.text_secondary)
+        .family(egui::FontFamily::Name("Medium".into()));
+    if ui.available_width() >= min_inline_w {
+        ui.horizontal(|ui| {
+            ui.label(label_text);
+            add(ui);
+        });
+    } else {
+        ui.label(label_text);
+        add(ui);
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn palette() -> Palette {
+        Palette::new(crate::config::ThemeKind::Light)
+    }
+
+    /// Nombre de colonnes : respect de la largeur minimale, gouttières
+    /// comprises, toujours au moins une colonne.
+    #[test]
+    fn tile_cols_respecte_largeur_minimale() {
+        // 2 colonnes de 340 px + 8 px de gouttière → il faut 688 px.
+        assert_eq!(tile_cols(300.0, 340.0, 2), 1, "300 px : une colonne");
+        assert_eq!(tile_cols(600.0, 340.0, 2), 1, "600 px : une colonne");
+        assert_eq!(tile_cols(700.0, 340.0, 2), 2, "700 px : deux colonnes");
+        assert_eq!(tile_cols(2000.0, 340.0, 2), 2, "borné par max_cols");
+        // 3 colonnes de 300 px + 2 gouttières → 916 px.
+        assert_eq!(tile_cols(900.0, 300.0, 3), 2, "900 px : deux colonnes");
+        assert_eq!(tile_cols(1000.0, 300.0, 3), 3, "1000 px : trois colonnes");
+        // Dégradés raisonnables : jamais zéro colonne.
+        assert_eq!(tile_cols(0.0, 340.0, 2), 1, "largeur nulle : une colonne");
+        assert_eq!(tile_cols(500.0, 340.0, 0), 1, "max_cols nul : une colonne");
+    }
+
+    /// Mode compact : bascule exactement à COMPACT_MAX_WIDTH.
+    #[test]
+    fn is_compact_bascule_a_720() {
+        assert!(is_compact(360.0), "360 px : mobile");
+        assert!(is_compact(719.9), "juste sous le seuil : mobile");
+        assert!(!is_compact(720.0), "seuil : bureau");
+        assert!(!is_compact(1280.0), "1280 px : bureau");
+    }
+
+    /// La grille rend toutes les tuiles, sans dépasser l'écran, et place
+    /// effectivement deux tuiles côte à côte en fenêtre large, empilées en
+    /// fenêtre étroite (mobile-first).
+    #[test]
+    fn grille_rend_toutes_les_tuiles_dans_l_ecran() {
+        let ctx = egui::Context::default();
+        crate::fonts::install(&ctx);
+        let p = palette();
+        for w in [360.0, 900.0, 1280.0] {
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w, 720.0));
+            ctx.begin_pass(egui::RawInput {
+                screen_rect: Some(screen),
+                ..Default::default()
+            });
+            // Un repère peint en fin de chaque tuile donne sa position.
+            let mut marks: Vec<egui::Rect> = Vec::new();
+            ctx.root_ui(|ui| {
+                tile_grid(ui, &p, 340.0, 4, |ui, _p, i| {
+                    card_body(ui, &p, |ui| {
+                        ui.set_min_width(ui.available_width() - 2.0);
+                        ui.label(format!("tuile {i}"));
+                        ui.add_space(8.0);
+                        let (r, _) = ui.allocate_exact_size(
+                            egui::vec2(10.0, 2.0),
+                            egui::Sense::hover(),
+                        );
+                        marks.push(r);
+                    });
+                });
+            });
+            let mut output = ctx.end_pass();
+            output.textures_delta.clear();
+
+            assert_eq!(marks.len(), 4, "4 tuiles attendues (largeur {w})");
+            for r in &marks {
+                assert!(
+                    r.left() >= -1.0 && r.right() <= w + 1.0 && r.bottom() <= screen.height() + 1.0,
+                    "tuile hors écran (largeur {w}) : {r:?}"
+                );
+            }
+            if w >= 688.0 {
+                // Deux tuiles côte à côte : la 2e commence après la 1re.
+                assert!(
+                    marks[1].left() >= marks[0].right() - 0.5,
+                    "attendu côte à côte (largeur {w}) : {marks:?}"
+                );
+            } else {
+                // Empilées : chaque tuile commence sous la précédente.
+                for pair in marks.windows(2) {
+                    assert!(
+                        pair[1].top() >= pair[0].bottom() - 0.5,
+                        "attendu empilé (largeur {w}) : {marks:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// labeled_control : libellé et contrôle sur la même ligne en largeur
+    /// suffisante, empilés (libellé au-dessus) en largeur insuffisante.
+    #[test]
+    fn labeled_control_empile_en_fenetre_etroite() {
+        let ctx = egui::Context::default();
+        crate::fonts::install(&ctx);
+        let p = palette();
+        for (w, expect_inline) in [(600.0, true), (200.0, false)] {
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w, 400.0));
+            ctx.begin_pass(egui::RawInput {
+                screen_rect: Some(screen),
+                ..Default::default()
+            });
+            let mut field_top = 0.0f32;
+            let start_y = ctx.root_ui(|ui| {
+                let start_y = ui.cursor().top();
+                labeled_control(ui, &p, "Paramètre", 400.0, |ui| {
+                    let resp = ui.add(egui::TextEdit::singleline(&mut String::new()));
+                    field_top = resp.rect.top();
+                });
+                start_y
+            });
+            let mut output = ctx.end_pass();
+            output.textures_delta.clear();
+            // En ligne : le champ démarre quasiment au même niveau que le
+            // libellé. Empilé : il démarre sous la ligne du libellé (~20 px).
+            let delta = field_top - start_y;
+            let actually_inline = delta < 10.0;
+            assert_eq!(
+                actually_inline, expect_inline,
+                "disposition inattendue (largeur {w}, champ à +{delta:.1} px)"
+            );
+        }
+    }
+
+    #[test]
+    fn ellipsize_coupe_avec_ellipse() {
+        assert_eq!(ellipsize("abcdef", 10), "abcdef");
+        assert_eq!(ellipsize("abcdef", 3), "abc…");
+    }
+}

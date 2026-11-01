@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/bastion-core", "crates/bastion"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Interface graphique sobre et élégante pour gérer UFW et Fail2Ban, en local ou via SSH"
 license = "GPL-3.0-only"

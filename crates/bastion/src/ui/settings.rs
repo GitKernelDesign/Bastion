@@ -1,4 +1,5 @@
 //! Écran Paramètres : langue, thème, actualisation, fichiers, à propos.
+//! Cartes en grille responsive (2×2 en fenêtre large, empilées sinon).
 
 use crate::app::GuiApp;
 use crate::components;
@@ -8,18 +9,28 @@ use crate::theme::Palette;
 use egui::RichText;
 
 pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
-    let t = app.tr;
-    components::screen_header(ui, p, t.nav_settings, t.settings_subtitle);
+    components::screen_header(ui, p, app.tr.nav_settings, app.tr.settings_subtitle);
     ui.add_space(6.0);
 
-    // ── Apparence ──
+    // Grille responsive : jusqu'à 2×2 tuiles en fenêtre large, une seule
+    // colonne en fenêtre étroite (mobile-first).
+    components::tile_grid(ui, p, 400.0, 4, |ui, p, i| match i {
+        0 => appearance_card(app, ui, p),
+        1 => refresh_card(app, ui, p),
+        2 => files_card(app, ui, p),
+        _ => about_card(app, ui, p),
+    });
+}
+
+/// ── Apparence ──
+fn appearance_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
+    let t = app.tr;
     components::card_body(ui, p, |ui| {
         ui.label(section(t.section_appearance));
         ui.add_space(6.0);
 
         // Langue.
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(t.language_label).size(12.5).color(p.text_secondary));
+        components::labeled_control(ui, p, t.language_label, 380.0, |ui| {
             let mut lang = app.lang;
             components::segmented(
                 ui,
@@ -38,8 +49,7 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
         });
 
         // Thème.
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(t.theme_label).size(12.5).color(p.text_secondary));
+        components::labeled_control(ui, p, t.theme_label, 380.0, |ui| {
             let mut theme = app.cfg.theme;
             components::segmented(
                 ui,
@@ -60,8 +70,7 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
         });
 
         // Taille du texte.
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(t.text_size_label).size(12.5).color(p.text_secondary));
+        components::labeled_control(ui, p, t.text_size_label, 380.0, |ui| {
             let mut scale = app.cfg.font_scale;
             components::segmented(ui, p, &[(0.9, "S"), (1.0, "M"), (1.15, "L")], &mut scale);
             if scale != app.cfg.font_scale {
@@ -79,9 +88,11 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
             }
         });
     });
-    ui.add_space(12.0);
+}
 
-    // ── Actualisation ──
+/// ── Actualisation ──
+fn refresh_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
+    let t = app.tr;
     components::card_body(ui, p, |ui| {
         ui.label(section(t.section_refresh));
         ui.add_space(6.0);
@@ -92,8 +103,7 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 app.cfg.save();
             }
         });
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(t.interval_label).size(12.5).color(p.text_secondary));
+        components::labeled_control(ui, p, t.interval_label, 360.0, |ui| {
             let mut secs = app.cfg.refresh_secs as f32;
             if ui
                 .add_enabled(app.cfg.auto_refresh, egui::Slider::new(&mut secs, 3.0..=60.0).suffix(" s"))
@@ -105,13 +115,16 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
         });
         components::hint(ui, p, t.refresh_hint);
     });
-    ui.add_space(12.0);
+}
 
-    // ── Fichiers ──
+/// ── Fichiers ──
+fn files_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
+    let t = app.tr;
     components::card_body(ui, p, |ui| {
         ui.label(section(t.section_files));
         ui.add_space(6.0);
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(8.0, 6.0);
             ui.label(RichText::new(t.config_path_label).size(12.5).color(p.text_secondary));
             let path = crate::config::AppConfig::config_path()
                 .to_string_lossy()
@@ -121,9 +134,11 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
         });
         components::hint(ui, p, t.files_hint);
     });
-    ui.add_space(12.0);
+}
 
-    // ── À propos ──
+/// ── À propos ──
+fn about_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
+    let t = app.tr;
     components::card_body(ui, p, |ui| {
         ui.label(section(t.section_about));
         ui.add_space(6.0);

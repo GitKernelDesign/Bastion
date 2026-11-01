@@ -115,7 +115,10 @@ fn render_toast(
         .corner_radius(egui::CornerRadius::same(10))
         .inner_margin(egui::Margin::same(12));
     frame.show(ui, |ui| {
-        ui.set_max_width(380.0);
+        // Largeur bornée à la fenêtre : un toast ne déborde jamais de
+        // l'écran, même en fenêtre étroite (mobile).
+        let max_w = (ui.ctx().input(|i| i.viewport_rect().width()) - 32.0).clamp(220.0, 380.0);
+        ui.set_max_width(max_w);
         ui.horizontal(|ui| {
             ui.label(crate::icons::icon_sz(icon, 16.0, border));
             ui.label(

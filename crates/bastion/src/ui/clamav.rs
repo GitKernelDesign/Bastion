@@ -36,9 +36,11 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
         return;
     }
 
-    services_card(app, ui, p);
-    ui.add_space(12.0);
-    db_card(app, ui, p);
+    // Grille responsive : services et bases côte à côte en fenêtre large.
+    components::tile_grid(ui, p, 360.0, 2, |ui, p, i| match i {
+        0 => services_card(app, ui, p),
+        _ => db_card(app, ui, p),
+    });
     ui.add_space(12.0);
     scan_card(app, ui, p);
 }
@@ -156,20 +158,22 @@ fn service_row(
         p.text_secondary
     };
 
-    ui.horizontal(|ui| {
-        ui.vertical(|ui| {
-            ui.horizontal(|ui| {
-                let (rect, _) = ui.allocate_exact_size(egui::vec2(12.0, 12.0), egui::Sense::hover());
-                ui.painter().circle_filled(rect.center(), 5.0, col);
-                ui.label(RichText::new(name).monospace());
-                let bg = crate::components::blend(col, ui.style().visuals.panel_fill, 0.18);
-                components::badge(ui, p, state, col, bg);
-                if let Some(at) = at {
-                    components::since_label(ui, p, t, at);
-                }
-            });
+    // Flux replié : état à gauche, actions dessous quand la largeur manque —
+    // les boutons ne sortent jamais de l'écran.
+    ui.vertical(|ui| {
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(8.0, 6.0);
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(12.0, 12.0), egui::Sense::hover());
+            ui.painter().circle_filled(rect.center(), 5.0, col);
+            ui.label(RichText::new(name).monospace());
+            let bg = crate::components::blend(col, ui.style().visuals.panel_fill, 0.18);
+            components::badge(ui, p, state, col, bg);
+            if let Some(at) = at {
+                components::since_label(ui, p, t, at);
+            }
         });
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        ui.add_space(4.0);
+        ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
             if active {
                 if components::ghost_button(ui, p, t.btn_restart).clicked() {
@@ -218,17 +222,18 @@ fn db_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
         |ui| {
             match &db {
                 Some(db) => {
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing = egui::vec2(8.0, 6.0);
                         ui.label(RichText::new(t.clam_db_engine).size(12.5).color(p.text_secondary));
                         ui.label(RichText::new(&db.engine).monospace());
-                        ui.add_space(12.0);
                         ui.label(RichText::new(t.clam_db_sigs).size(12.5).color(p.text_secondary));
                         ui.label(RichText::new(db.sigs.to_string()).monospace());
                         if let Some(at) = db_at {
                             components::since_label(ui, p, t, at);
                         }
                     });
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing = egui::vec2(8.0, 6.0);
                         ui.label(RichText::new(t.clam_db_date).size(12.5).color(p.text_secondary));
                         ui.label(RichText::new(&db.db_date).monospace());
                     });
@@ -295,13 +300,22 @@ fn scan_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
 
     components::card(ui, p, t.clam_scan_title, |_| {}, |ui| {
         ui.label(RichText::new(t.clam_scan_path_label).size(12.5).color(p.text_secondary));
-        ui.horizontal(|ui| {
+        // Rangée adaptative : champ + boutons sur une ligne en fenêtre
+        // large ; champ pleine largeur puis boutons dessous en fenêtre
+        // étroite.
+        let avail = ui.available_width();
+        let inline = avail >= 620.0;
+        ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
             let resp = ui.add(
                 egui::TextEdit::singleline(&mut app.clam.scan_path)
                     .hint_text(t.clam_scan_hint)
-                    // Réserve la place des deux boutons et du spinner.
-                    .desired_width((ui.available_width() - 350.0).max(160.0))
+                    // Réserve la place des boutons et du spinner.
+                    .desired_width(if inline {
+                        (avail - 350.0).max(160.0)
+                    } else {
+                        (ui.available_width() - 8.0).max(160.0)
+                    })
                     .font(egui::TextStyle::Monospace),
             );
             let path_ok = {

@@ -18,9 +18,11 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &crate::theme::Palette) {
         return;
     }
 
-    ui.columns(2, |cols| {
-        local_card(app, &mut cols[0], p);
-        ssh_card(app, &mut cols[1], p);
+    // Grille responsive : local et SSH côte à côte en fenêtre large,
+    // empilés en fenêtre étroite (mobile-first).
+    components::tile_grid(ui, p, 340.0, 2, |ui, p, i| match i {
+        0 => local_card(app, ui, p),
+        _ => ssh_card(app, ui, p),
     });
 
     ui.add_space(10.0);
@@ -190,13 +192,14 @@ fn ssh_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &crate::theme::Palette) {
             let f = &mut app.form;
             !f.host.trim().is_empty() && !f.user.trim().is_empty()
         };
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(8.0, 6.0);
             if ui
                 .add_enabled(
                     ready,
                     egui::TextEdit::singleline(&mut app.form.save_name)
                         .hint_text(t.save_profile_placeholder)
-                        .desired_width(220.0),
+                        .desired_width((ui.available_width() - 140.0).clamp(140.0, 220.0)),
                 )
                 .lost_focus()
                 && ui.input(|i| i.key_pressed(egui::Key::Enter))
