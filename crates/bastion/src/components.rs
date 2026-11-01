@@ -107,12 +107,19 @@ fn styled_button_opts(
         BtnKind::Ghost => Color32::TRANSPARENT,
         BtnKind::Soft => p.card_hover,
     };
+    // Au survol, le fond s'assombrit au lieu de s'éclaircir : plus lisible
+    // sur les cartes claires (le fond de repos des boutons doux frôle déjà
+    // celui de la carte) et cohérent avec l'état appuyé, lui aussi assombri.
+    // Ratios renforcés en thème sombre, où le fond de repos est très proche
+    // de la carte.
+    let hover_k = if p.dark { 0.35 } else { 0.10 };
+    let press_k = if p.dark { 0.45 } else { 0.18 };
     let (fill, stroke) = match kind {
         BtnKind::Ghost => (
             if pressed {
-                blend(p.card_hover, p.border, 0.35)
+                blend(p.card_hover, BLACK, press_k)
             } else if hovered {
-                p.card_hover
+                blend(p.card_hover, BLACK, hover_k)
             } else {
                 Color32::TRANSPARENT
             },
@@ -120,9 +127,9 @@ fn styled_button_opts(
         ),
         _ => {
             let fill = if pressed {
-                blend(base_fill, BLACK, if p.dark { 0.20 } else { 0.14 })
+                blend(base_fill, BLACK, press_k)
             } else if hovered {
-                blend(base_fill, WHITE, if p.dark { 0.12 } else { 0.07 })
+                blend(base_fill, BLACK, hover_k)
             } else {
                 base_fill
             };
@@ -585,6 +592,17 @@ pub fn tile_grid(
             ui.add_space(TILE_GAP_Y);
         }
     }
+}
+
+/// Comble la dernière colonne d'un tableau jusqu'au bord droit de sa
+/// carte. Une `egui::Grid` se cale sur la largeur de son contenu et
+/// laisse sinon un blanc à droite ; egui expose déjà, pour la dernière
+/// colonne, comme largeur disponible tout l'espace restant — il suffit
+/// de l'allouer. À appeler dans la dernière cellule (au sein d'un
+/// sous-`Ui` `horizontal`/`vertical`, chaque widget ajouté directement
+/// étant une cellule à part entière).
+pub fn stretch_cell(ui: &mut Ui) {
+    ui.allocate_exact_size(egui::vec2(ui.available_width(), 0.0), egui::Sense::hover());
 }
 
 /// Paramètre d'interface « libellé + contrôle » : sur une même ligne tant

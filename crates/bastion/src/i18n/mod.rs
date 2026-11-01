@@ -1,4 +1,4 @@
-//! Internationalisation : FR, EN, ES, DE.
+//! Internationalisation : FR, EN, ES, DE, PT, IT, UK, RU.
 //!
 //! Toutes les chaînes visibles de l'application passent par `Tr` ;
 //! `localize_error` traduit les erreurs du cœur et complète le stderr
@@ -8,6 +8,10 @@ mod de;
 mod en;
 mod es;
 mod fr;
+mod it;
+mod pt;
+mod ru;
+mod uk;
 
 use bastion_core::model::{Direction, LogLevel, Policy, RuleAction, RuleDir};
 use bastion_core::CoreError;
@@ -19,6 +23,10 @@ pub enum Lang {
     En,
     Es,
     De,
+    Pt,
+    It,
+    Uk,
+    Ru,
 }
 
 impl Lang {
@@ -37,6 +45,18 @@ impl Lang {
                 if v.starts_with("de") {
                     return Lang::De;
                 }
+                if v.starts_with("pt") {
+                    return Lang::Pt;
+                }
+                if v.starts_with("it") {
+                    return Lang::It;
+                }
+                if v.starts_with("uk") {
+                    return Lang::Uk;
+                }
+                if v.starts_with("ru") {
+                    return Lang::Ru;
+                }
                 if v.starts_with("en") {
                     return Lang::En;
                 }
@@ -52,6 +72,10 @@ impl Lang {
             Lang::En => "EN",
             Lang::Es => "ES",
             Lang::De => "DE",
+            Lang::Pt => "PT",
+            Lang::It => "IT",
+            Lang::Uk => "UK",
+            Lang::Ru => "RU",
         }
     }
 }
@@ -62,6 +86,10 @@ pub fn tr(lang: Lang) -> &'static Tr {
         Lang::En => &en::TR,
         Lang::Es => &es::TR,
         Lang::De => &de::TR,
+        Lang::Pt => &pt::TR,
+        Lang::It => &it::TR,
+        Lang::Uk => &uk::TR,
+        Lang::Ru => &ru::TR,
     }
 }
 

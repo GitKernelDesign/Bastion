@@ -92,6 +92,8 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                                     )
                                     .on_hover_text(&entry.detail);
                                 }
+                                // Dernière colonne : comble la largeur de la carte.
+                                components::stretch_cell(ui);
                             });
                             ui.end_row();
                         }

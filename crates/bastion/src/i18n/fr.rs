@@ -256,7 +256,7 @@ pub const TR: Tr = Tr {
     config_path_label: "Configuration :",
     files_hint: "Profils SSH, thème, empreintes connues — aucun mot de passe.",
     section_about: "À propos",
-    about_line_t: "Bastion v{v} — interface de gestion UFW & Fail2Ban (local et SSH).",
+    about_line_t: "Bastion v{v} / interface de gestion UFW & Fail2Ban (local et SSH).",
     about_helper: "En local, un assistant root minimal est démarré via polkit une fois par session : liste blanche stricte (ufw, fail2ban-client, systemctl, journalctl — unités fail2ban/ufw uniquement), socket UNIX réservée à votre utilisateur, arrêt automatique après inactivité.",
 
     toast_connected: "Connecté — pare-feu et Fail2Ban en cours de lecture…",

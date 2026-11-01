@@ -446,10 +446,20 @@ fn ports_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
             .show(ui, |ui| {
                 ui.label(header(p, t.col_port));
                 ui.label(header(p, t.col_action));
-                ui.label(header(p, t.col_dir));
+                ui.horizontal(|ui| {
+                    ui.label(header(p, t.col_dir));
+                    // En fenêtre étroite, la direction est la dernière
+                    // colonne : c'est elle qui comble la carte.
+                    if narrow {
+                        components::stretch_cell(ui);
+                    }
+                });
                 if !narrow {
                     ui.label(header(p, "IP"));
-                    ui.label(header(p, t.col_rules));
+                    ui.horizontal(|ui| {
+                        ui.label(header(p, t.col_rules));
+                        components::stretch_cell(ui);
+                    });
                 }
                 ui.end_row();
 
@@ -688,17 +698,11 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 .cloned()
                 .collect();
 
-            // Hauteur ajustée au contenu : toutes les règles filtrées sont
-            // visibles sans défilement interne tant qu'il y en a moins de ~70 ;
-            // aucune grande zone vide quand il y a peu de règles.
-            let list_h = (34.0 + 29.0 * rules.len() as f32).clamp(200.0, 2100.0);
-            egui::ScrollArea::vertical()
-                .max_height(list_h)
-                // Hauteur forcée : sans min_scrolled_height, une ScrollArea
-                // imbriquée dans le défilement de page s'effondre à 64 px.
-                .min_scrolled_height(list_h)
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
+            // Intégralité des règles visible d'un coup d'œil : pas de
+            // défilement interne — la carte s'étire à la hauteur du
+            // tableau et c'est le défilement de la page qui prend le
+            // relais (une ScrollArea imbriquée s'effondrerait à 64 px).
+            ui.vertical(|ui| {
                     // Tableau responsive : en fenêtre étroite, les colonnes
                     // « De » et « IP » passent en infobulle (6 ou 4 colonnes ;
                     // le commentaire reste dans l'infobulle de suppression).
@@ -719,7 +723,12 @@ fn rules_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                             if !narrow {
                                 ui.label(header(p, "IP"));
                             }
-                            ui.label(header(p, ""));
+                            // Dernière colonne (icône de suppression) :
+                            // comble la largeur de la carte.
+                            ui.horizontal(|ui| {
+                                ui.label(header(p, ""));
+                                components::stretch_cell(ui);
+                            });
                             ui.end_row();
 
                             for rule in &rules {

@@ -54,14 +54,14 @@ L'ergonomie complète (personas, parcours, système de design, décisions refus�
 
 ```bash
 # Rendre exécutable puis lancer :
-chmod +x Bastion-0.1.1-x86_64.AppImage
-./Bastion-0.1.1-x86_64.AppImage
+chmod +x Bastion-0.2.0-x86_64.AppImage
+./Bastion-0.2.0-x86_64.AppImage
 ```
 
 - **Cet ordinateur** → *Se connecter* → saisissez votre mot de passe une fois (agent polkit de votre bureau) ;
 - **SSH** → hôte, port, utilisateur, mot de passe ou clé, *Se connecter* (l'option « via sudo » convient aux connexions non-root).
 
-La langue se choisit dans **Réglages → Apparence → Langue** (FR / EN / ES / DE) ; la détection initiale suit `LANG`/`LC_MESSAGES`.
+La langue se choisit dans **Réglages → Apparence → Langue** (FR / EN / ES / DE / PT / IT / UK / RU) ; la détection initiale suit `LANG`/`LC_MESSAGES`.
 
 > **GLIBC / Debian 13** — l'AppImage est compilé sur **Debian 13 stable (glibc 2.41)** et fonctionne sur toute distribution dotée de glibc ≥ 2.41. L'erreur `version 'GLIBC_2.43' not found` venait d'un binaire compilé sur une distribution plus récente : reconstruisez toujours l'AppImage **sur la machine (ou la distribution) cible la plus ancienne** avec `./packaging/build.sh` — le script vérifie désormais automatiquement que le binaire n'exige pas un glibc plus récent que le système hôte.
 
@@ -93,7 +93,7 @@ crates/
     ├── app.rs            # État, événements worker, opérations pendantes
     ├── worker.rs         # Thread async ↔ UI (journalisation de chaque commande)
     ├── theme.rs          # Palette sobre, typographie IBM Plex
-    ├── i18n/             # Traductions FR / EN / ES / DE, détection de langue
+    ├── i18n/             # Traductions FR / EN / ES / DE / PT / IT / UK / RU, détection de langue
     ├── ui/               # 5 écrans (connexion, pare-feu, fail2ban, journal, réglages)
     └── modal.rs          # Confirmations, ajout de règle, clé serveur…
 ```

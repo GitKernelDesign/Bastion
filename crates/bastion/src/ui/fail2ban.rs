@@ -191,11 +191,22 @@ fn jails_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                         .show(ui, |ui| {
                             ui.label(header(p, t.col_jail));
                             ui.label(header(p, t.col_banned));
-                            ui.label(header(p, t.col_failed));
+                            ui.horizontal(|ui| {
+                                ui.label(header(p, t.col_failed));
+                                // En fenêtre étroite, les échecs sont la
+                                // dernière colonne : c'est elle qui comble
+                                // la carte.
+                                if narrow {
+                                    components::stretch_cell(ui);
+                                }
+                            });
                             if !narrow {
                                 ui.label(header(p, "bantime"));
                                 ui.label(header(p, "findtime"));
-                                ui.label(header(p, ""));
+                                ui.horizontal(|ui| {
+                                    ui.label(header(p, ""));
+                                    components::stretch_cell(ui);
+                                });
                             }
                             ui.end_row();
 
@@ -376,18 +387,28 @@ fn jail_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette, jail: &str) {
                         .show(ui, |ui| {
                             for ip in &info.banned_ips {
                                 ui.label(RichText::new(ip).monospace());
-                                if ui
-                                    .add(egui::Button::new(components::btn_icon_text(
-                                        crate::icons::RESTORE,
-                                        t.btn_unban,
-                                    )))
-                                    .clicked()
-                                {
-                                    app.send_op(
-                                        Pending::Unban { jail: jail.to_string(), ip: ip.clone() },
-                                        Op::F2bUnbanIp { jail: jail.to_string(), ip: ip.clone() },
-                                    );
-                                }
+                                ui.horizontal(|ui| {
+                                    let unban = ui
+                                        .add(egui::Button::new(components::btn_icon_text(
+                                            crate::icons::RESTORE,
+                                            t.btn_unban,
+                                        )))
+                                        .clicked();
+                                    if unban {
+                                        app.send_op(
+                                            Pending::Unban {
+                                                jail: jail.to_string(),
+                                                ip: ip.clone(),
+                                            },
+                                            Op::F2bUnbanIp {
+                                                jail: jail.to_string(),
+                                                ip: ip.clone(),
+                                            },
+                                        );
+                                    }
+                                    // Dernière colonne : comble la largeur de la carte.
+                                    components::stretch_cell(ui);
+                                });
                                 ui.end_row();
                             }
                         });

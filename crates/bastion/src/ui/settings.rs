@@ -40,6 +40,10 @@ fn appearance_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                     (Lang::En, Lang::En.code()),
                     (Lang::Es, Lang::Es.code()),
                     (Lang::De, Lang::De.code()),
+                    (Lang::Pt, Lang::Pt.code()),
+                    (Lang::It, Lang::It.code()),
+                    (Lang::Uk, Lang::Uk.code()),
+                    (Lang::Ru, Lang::Ru.code()),
                 ],
                 &mut lang,
             );
