@@ -57,7 +57,7 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 ui,
                 p,
                 &format!("{}  {}", crate::icons::TERMINAL, t.report_btn),
-                components::BtnKind::Ghost,
+                components::BtnKind::GhostOnBg,
                 !busy_report,
             )
             .clicked()
@@ -72,7 +72,7 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                     ui,
                     p,
                     &format!("{}  {}", crate::icons::RESTART, t.reload_btn),
-                    components::BtnKind::Ghost,
+                    components::BtnKind::GhostOnBg,
                     !busy_reload,
                 )
                 .on_hover_text(t.reload_rules_tooltip)
@@ -98,7 +98,7 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 ui,
                 p,
                 &format!("{}  {}", crate::icons::TERMINAL, t.report_btn),
-                components::BtnKind::Ghost,
+                components::BtnKind::GhostOnBg,
                 !busy_report,
             )
             .clicked()
@@ -112,7 +112,7 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 ui,
                 p,
                 &format!("{}  {}", crate::icons::RESTART, t.reload_btn),
-                components::BtnKind::Ghost,
+                components::BtnKind::GhostOnBg,
                 !busy_reload,
             )
             .on_hover_text(t.reload_rules_tooltip)

@@ -42,14 +42,19 @@ fn soft_shadow(alpha: u8) -> egui::Shadow {
 // ─── Boutons (esprit uikit : états survol/appui, ombre discrète) ─────────────
 
 /// Variantes visuelles de bouton.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum BtnKind {
     /// Action principale (accent plein).
     Primary,
     /// Action destructive (danger plein).
     Danger,
-    /// Action secondaire (contour discret).
+    /// Action secondaire (contour discret), posée sur une carte.
     Ghost,
+    /// Action secondaire posée sur le fond de travail (hors cartes) :
+    /// au repos, la typo est celle prévue pour ce fond (sombre en thème
+    /// sombre, où il est terracotta) ; au survol et à l'appui, la pastille
+    /// devient quasi noire et la typo bascule sur celle du thème.
+    GhostOnBg,
     /// Action tertiaire (fond doux, sans contour).
     Soft,
 }
@@ -72,6 +77,99 @@ pub fn styled_button_minw(
     styled_button_opts(ui, p, label, kind, enabled, min_width)
 }
 
+/// Couleurs d'un bouton pour un état donné : (fond, contour, typographie).
+/// Fonction pure, séparée du dessin pour être testée unitairement.
+///
+/// Règle de contraste du design system : tout fond opaque sombre porte
+/// une typo blanche, tout fond clair une typo sombre (`on_bg`). Pour les
+/// boutons pleins, la typo est choisie sur le fond de base, puis les états
+/// survol/appui écartent le fond de cette typo — le contraste ne fait que
+/// monter. Un bouton plein désactivé éteint son fond (fondu vers la carte)
+/// en gardant une typo lisible : l'état se lit à la couleur, pas à
+/// l'ilisibilité.
+fn btn_colors(
+    p: &Palette,
+    kind: BtnKind,
+    enabled: bool,
+    hovered: bool,
+    pressed: bool,
+) -> (Color32, Stroke, Color32) {
+    let hovered = enabled && hovered;
+    let pressed = enabled && pressed;
+    let base_fill = match kind {
+        BtnKind::Primary => p.accent,
+        BtnKind::Danger => p.danger,
+        BtnKind::Ghost | BtnKind::GhostOnBg => Color32::TRANSPARENT,
+        BtnKind::Soft => p.card_hover,
+    };
+    let base_fill =
+        if !enabled && matches!(kind, BtnKind::Primary | BtnKind::Danger) {
+            blend(base_fill, p.card, 0.5)
+        } else {
+            base_fill
+        };
+    let filled_text = crate::theme::on_fill(p, base_fill);
+    // Repos sur fond transparent : la typo suit la surface porteuse. Un
+    // Ghost posé sur le fond de travail (terracotta en thème sombre) prend
+    // la couleur prévue pour ce fond ; au survol et à l'appui, sa pastille
+    // devient quasi noire et la typo bascule sur celle du thème —
+    // fond noir ⇒ typo blanche.
+    let (rest_text, state_text) = match kind {
+        BtnKind::Primary | BtnKind::Danger => (filled_text, filled_text),
+        BtnKind::Ghost | BtnKind::Soft => (p.text, p.text),
+        BtnKind::GhostOnBg => (p.on_bg, p.text),
+    };
+    let text = if !enabled {
+        match kind {
+            BtnKind::Primary | BtnKind::Danger => filled_text,
+            BtnKind::GhostOnBg => p.on_bg_secondary,
+            _ => p.text_secondary,
+        }
+    } else if pressed || hovered {
+        state_text
+    } else {
+        rest_text
+    };
+    // Au survol et à l'appui, le fond s'écarte de la typo : les fonds
+    // sombres (typo blanche) s'assombrissent, les fonds clairs (typo
+    // sombre) s'éclaircissent — plus lisible sur les cartes, où le fond
+    // de repos des boutons doux frôle déjà celui de la carte. Ratios
+    // renforcés en thème sombre, où ce fond de repos est très proche.
+    let hover_k = if p.dark { 0.35 } else { 0.10 };
+    let press_k = if p.dark { 0.45 } else { 0.18 };
+    let (fill, stroke) = match kind {
+        BtnKind::Ghost | BtnKind::GhostOnBg => (
+            if pressed {
+                blend(BLACK, p.card_hover, press_k)
+            } else if hovered {
+                blend(BLACK, p.card_hover, hover_k)
+            } else {
+                Color32::TRANSPARENT
+            },
+            Stroke::new(1.0, if hovered { p.accent } else { p.border }),
+        ),
+        _ => {
+            // Fond doux : la typo suit le thème, le fond s'assombrit (son
+            // repos frôle déjà la carte). Fond plein : on écarte le fond
+            // de la typo, choisie sur le fond de base.
+            let target = match kind {
+                BtnKind::Soft => BLACK,
+                _ if crate::theme::fill_is_light(base_fill) => WHITE,
+                _ => BLACK,
+            };
+            let fill = if pressed {
+                blend(target, base_fill, press_k)
+            } else if hovered {
+                blend(target, base_fill, hover_k)
+            } else {
+                base_fill
+            };
+            (fill, Stroke::NONE)
+        }
+    };
+    (fill, stroke, text)
+}
+
 fn styled_button_opts(
     ui: &mut Ui,
     p: &Palette,
@@ -80,18 +178,13 @@ fn styled_button_opts(
     enabled: bool,
     min_width: f32,
 ) -> egui::Response {
-    let text_color = match kind {
-        BtnKind::Primary | BtnKind::Danger => WHITE,
-        _ => p.text,
-    };
     let font = FontId::new(14.0, egui::FontFamily::Name("Medium".into()));
-    let galley = ui.painter().layout_no_wrap(
-        label.to_owned(),
-        font,
-        if enabled { text_color } else { p.text_secondary },
-    );
+    // Passe 1 : métrique seule (la couleur n'influence pas la taille).
+    let probe = ui
+        .painter()
+        .layout_no_wrap(label.to_owned(), font.clone(), Color32::WHITE);
     let pad = egui::vec2(16.0, 9.0);
-    let mut size = galley.size() + 2.0 * pad;
+    let mut size = probe.size() + 2.0 * pad;
     size.x = size.x.max(min_width);
     let sense = if enabled { Sense::click() } else { Sense::hover() };
     let (rect, resp) = ui.allocate_exact_size(size, sense);
@@ -99,47 +192,20 @@ fn styled_button_opts(
         egui::WidgetInfo::labeled(egui::Role::Button, enabled, label)
     });
 
-    let hovered = enabled && resp.hovered();
-    let pressed = enabled && resp.is_pointer_button_down_on();
-    let base_fill = match kind {
-        BtnKind::Primary => p.accent,
-        BtnKind::Danger => p.danger,
-        BtnKind::Ghost => Color32::TRANSPARENT,
-        BtnKind::Soft => p.card_hover,
-    };
-    // Au survol, le fond s'assombrit au lieu de s'éclaircir : plus lisible
-    // sur les cartes claires (le fond de repos des boutons doux frôle déjà
-    // celui de la carte) et cohérent avec l'état appuyé, lui aussi assombri.
-    // Ratios renforcés en thème sombre, où le fond de repos est très proche
-    // de la carte.
-    let hover_k = if p.dark { 0.35 } else { 0.10 };
-    let press_k = if p.dark { 0.45 } else { 0.18 };
-    let (fill, stroke) = match kind {
-        BtnKind::Ghost => (
-            if pressed {
-                blend(p.card_hover, BLACK, press_k)
-            } else if hovered {
-                blend(p.card_hover, BLACK, hover_k)
-            } else {
-                Color32::TRANSPARENT
-            },
-            Stroke::new(1.0, if hovered { p.accent } else { p.border }),
-        ),
-        _ => {
-            let fill = if pressed {
-                blend(base_fill, BLACK, press_k)
-            } else if hovered {
-                blend(base_fill, BLACK, hover_k)
-            } else {
-                base_fill
-            };
-            (fill, Stroke::NONE)
-        }
-    };
+    let hovered = resp.hovered();
+    let pressed = resp.is_pointer_button_down_on();
+    let (fill, stroke, text_color) = btn_colors(p, kind, enabled, hovered, pressed);
+    // Passe 2 : galley définitif, avec la typo de l'état courant.
+    let galley = ui
+        .painter()
+        .layout_no_wrap(label.to_owned(), font, text_color);
     let radius = CornerRadius::same(10);
 
-    // Ombre portée douce sous les boutons pleins au survol.
-    if hovered && !matches!(kind, BtnKind::Ghost) {
+    // Ombre portée douce sous les boutons remplis au survol.
+    if hovered
+        && enabled
+        && !matches!(kind, BtnKind::Ghost | BtnKind::GhostOnBg)
+    {
         let alpha = if p.dark { 70 } else { 45 };
         let below = rect.translate(egui::vec2(0.0, 2.0));
         ui.painter().add(
@@ -149,7 +215,7 @@ fn styled_button_opts(
     }
     ui.painter().rect(rect, radius, fill, stroke, StrokeKind::Inside);
     // Reflet très discret sur la moitié supérieure des boutons pleins.
-    if !matches!(kind, BtnKind::Ghost | BtnKind::Soft) {
+    if matches!(kind, BtnKind::Primary | BtnKind::Danger) {
         let sheen = egui::Rect::from_min_size(
             rect.left_top(),
             egui::vec2(rect.width(), (rect.height() * 0.5).max(1.0)),
@@ -197,14 +263,34 @@ pub fn card<R>(
 }
 
 /// Cadre de carte : fond, bordure, rayon et ombre discrète.
+///
+/// Équilibre des rangées de tuiles : quand des cartes se tiennent côte à
+/// côte, `tile_grid` mémorise (clé = id de cet Ui) la hauteur visée des
+/// cartes de la rangée — celle de la plus grande, marges et trait de
+/// bordure compris. La carte comble l'écart sous son contenu pour
+/// atteindre cette hauteur, sans jamais rétrécir.
 fn card_frame<R>(ui: &mut Ui, p: &Palette, body: impl FnOnce(&mut Ui) -> R) -> R {
+    let stretch = ui.ctx().data(|d| d.get_temp::<f32>(ui.scope_id()));
+    let pad = 16.0; // marge intérieure verticale (cf. inner_margin)
+    let stroke_w = 1.0; // épaisseur du trait de bordure (cf. stroke)
     Frame::NONE
         .fill(p.card)
-        .stroke(egui::Stroke::new(1.0, p.border))
+        .stroke(egui::Stroke::new(stroke_w, p.border))
         .corner_radius(CornerRadius::same(14))
-        .inner_margin(Margin::same(16))
+        .inner_margin(Margin::same(pad as i8))
         .shadow(soft_shadow(if p.dark { 55 } else { 20 }))
-        .show(ui, body)
+        .show(ui, |ui| {
+            let r = body(ui);
+            if let Some(h) = stretch {
+                // `set_min_height` réserve h sous le curseur, espacement
+                // compris : on ne demande que le complément exact pour
+                // atteindre la hauteur visée (jamais rétrécir).
+                let target = (h - 2.0 * (pad + stroke_w)).max(0.0);
+                let used = ui.cursor().min.y - ui.min_rect().min.y;
+                ui.set_min_height((target - used).max(0.0));
+            }
+            r
+        })
         .inner
 }
 
@@ -276,7 +362,13 @@ pub fn segmented<T: PartialEq + Copy>(
             ui.spacing_mut().item_spacing = egui::vec2(2.0, 0.0);
             for (v, label) in variants {
                 let selected = *value == *v;
-                let text_col = if selected { WHITE } else { p.text_secondary };
+                // Segment actif : l'accent est clair sur les deux thèmes,
+                // la typo qui porte dessus est donc sombre (on_fill).
+                let text_col = if selected {
+                    crate::theme::on_fill(p, p.accent)
+                } else {
+                    p.text_secondary
+                };
                 let font = FontId::new(12.5, egui::FontFamily::Name("Medium".into()));
                 let galley = ui.painter().layout_no_wrap(label.to_string(), font, text_col);
                 let w = galley.size().x + 22.0;
@@ -560,8 +652,16 @@ pub fn tile_cols(avail: f32, min_tile_w: f32, max_cols: usize) -> usize {
 /// Grille de tuiles responsive : les `tiles` tuiles se placent côte à côte
 /// tant que la largeur le permet (au moins `min_tile_w` chacune), puis
 /// passent à la ligne ; en fenêtre étroite tout s'empile sur une colonne.
-/// `render` est appelé exactement une fois par tuile, avec l'ui de la
-/// tuile et son index.
+/// `render` est appelé avec l'ui de la tuile et son index.
+///
+/// Quand plusieurs tuiles se tiennent côte à côte, la rangée est d'abord
+/// mesurée : `render` est rejoué pour chaque tuile dans un Ui invisible
+/// hors écran (rien n'est peint ni interactif), à la largeur exacte de sa
+/// colonne. Chaque carte s'étire ensuite à la hauteur de la plus grande
+/// de sa rangée — équilibre visuel en plein écran. Conséquence pour les
+/// appelants : les effets de `render` doivent rester conditionnés à des
+/// événements (clic, changement), ce qui est déjà la règle partout
+/// ailleurs.
 pub fn tile_grid(
     ui: &mut Ui,
     p: &Palette,
@@ -581,8 +681,35 @@ pub fn tile_grid(
             // Une seule tuile : pleine largeur, rendue directement.
             render(ui, p, i);
         } else {
+            // Passe de mesure : chaque tuile de la rangée est rejouée dans
+            // un Ui invisible hors écran, aux mêmes règles de largeur et de
+            // disposition que `Ui::columns`, pour mesurer la plus grande
+            // hauteur de carte de la rangée.
+            let col_w = (avail - TILE_GAP_X * (row - 1) as f32) / row as f32;
+            let mut target = 0.0f32;
+            for j in 0..row {
+                let mut probe = ui.new_child(
+                    egui::UiBuilder::new()
+                        .id_salt("mesure de tuile")
+                        .max_rect(egui::Rect::from_min_size(
+                            egui::pos2(-1.0e5, -1.0e5),
+                            egui::vec2(col_w, 1.0e5),
+                        ))
+                        .layout(Layout::top_down_justified(Align::LEFT))
+                        .invisible(),
+                );
+                probe.set_width(col_w);
+                render(&mut probe, p, i + j);
+                target = target.max(probe.min_rect().height());
+            }
+            // Passe réelle : la hauteur cible est mémorisée pour les
+            // colonnes de la rangée (clé = id de l'Ui de colonne) ; les
+            // cartes la lisent (voir `card_frame`) et étirent leur
+            // contenu jusqu'à elle.
             ui.columns(row, |cols_ui| {
                 for (j, col) in cols_ui.iter_mut().enumerate() {
+                    col.ctx()
+                        .data_mut(|d| d.insert_temp(col.scope_id(), target));
                     render(col, p, i + j);
                 }
             });
@@ -681,6 +808,8 @@ mod tests {
                 ..Default::default()
             });
             // Un repère peint en fin de chaque tuile donne sa position.
+            // (La passe de mesure rejoue aussi la tuile, mais dans un Ui
+            // invisible : on ne retient que les repères réellement peints.)
             let mut marks: Vec<egui::Rect> = Vec::new();
             ctx.root_ui(|ui| {
                 tile_grid(ui, &p, 340.0, 4, |ui, _p, i| {
@@ -692,7 +821,9 @@ mod tests {
                             egui::vec2(10.0, 2.0),
                             egui::Sense::hover(),
                         );
-                        marks.push(r);
+                        if ui.is_visible() {
+                            marks.push(r);
+                        }
                     });
                 });
             });
@@ -763,5 +894,160 @@ mod tests {
     fn ellipsize_coupe_avec_ellipse() {
         assert_eq!(ellipsize("abcdef", 10), "abcdef");
         assert_eq!(ellipsize("abcdef", 3), "abc…");
+    }
+
+    /// Équilibre visuel des rangées : en fenêtre large, deux cartes de
+    /// contenu différent côte à côte ont exactement la même hauteur — la
+    /// plus petite s'étire à la hauteur de la plus grande, qui ne rétrécit
+    /// pas. En fenêtre étroite (une colonne), chaque carte garde sa
+    /// hauteur naturelle.
+    #[test]
+    fn tuiles_d_une_rangee_de_meme_hauteur() {
+        let ctx = egui::Context::default();
+        crate::fonts::install(&ctx);
+        let p = palette();
+
+        // Rend la grille et retourne les rectangles des cartes peintes
+        // (retrouvées par leur fond de carte, unique dans ce canevas).
+        // Une carte peinte avec ombre produit un Shape::Vec(ombre, cadre) :
+        // on descend dedans pour trouver le cadre.
+        let card_rects = |w: f32| -> Vec<egui::Rect> {
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w, 720.0));
+            ctx.begin_pass(egui::RawInput {
+                screen_rect: Some(screen),
+                ..Default::default()
+            });
+            ctx.root_ui(|ui| {
+                tile_grid(ui, &p, 340.0, 2, |ui, _p, i| {
+                    card_body(ui, &p, |ui| {
+                        ui.set_min_width(ui.available_width() - 2.0);
+                        for k in 0..(1 + i * 5) {
+                            ui.label(format!("ligne {k}"));
+                        }
+                    });
+                });
+            });
+            let mut out = ctx.end_pass();
+            out.textures_delta.clear();
+            let mut rects = Vec::new();
+            for cs in &out.shapes {
+                collect_card_rects(&cs.shape, p.card, &mut rects);
+            }
+            rects
+        };
+
+        // Fenêtre étroite : tuiles empilées, hauteurs naturelles.
+        let narrow = card_rects(400.0);
+        assert_eq!(narrow.len(), 2, "deux cartes attendues");
+        let (h0, h1) = (narrow[0].height(), narrow[1].height());
+        assert!(h0 < h1, "la carte d'une ligne doit être plus courte");
+        assert!(
+            narrow[1].top() >= narrow[0].bottom(),
+            "attendu empilées : {narrow:?}"
+        );
+
+        // Fenêtre large : côte à côte, même hauteur, même alignement haut.
+        let wide = card_rects(1280.0);
+        assert_eq!(wide.len(), 2, "deux cartes attendues");
+        assert!(
+            wide[1].left() > wide[0].right(),
+            "attendu côte à côte : {wide:?}"
+        );
+        assert!(
+            (wide[0].top() - wide[1].top()).abs() < 0.5,
+            "attendu alignées en haut : {wide:?}"
+        );
+        assert!(
+            (wide[0].height() - wide[1].height()).abs() < 0.5,
+            "attendu même hauteur : {wide:?}"
+        );
+        // La hauteur commune est celle de la plus grande carte, mesurée
+        // naturellement en fenêtre étroite : la grande ne rétrécit pas.
+        let stretched = wide[0].height().max(wide[1].height());
+        assert!(
+            (stretched - h1).abs() < 1.5,
+            "hauteur commune ≈ hauteur naturelle de la plus grande ({stretched:.1} vs {h1:.1})"
+        );
+    }
+
+    /// Contraste WCAG entre deux couleurs (≥ 4,5 = AA, ≥ 3 = visible).
+    fn contrast(a: Color32, b: Color32) -> f32 {
+        let (la, lb) = (crate::theme::luminance(a), crate::theme::luminance(b));
+        let (hi, lo) = if la >= lb { (la, lb) } else { (lb, la) };
+        (hi + 0.05) / (lo + 0.05)
+    }
+
+    /// Rectangles des cadres de cartes peints dans un arbre de formes,
+    /// dans l'ordre du document (une carte avec ombre peint un
+    /// `Shape::Vec(ombre, cadre)` qu'il faut traverser).
+    fn collect_card_rects(shape: &egui::Shape, fill: Color32, out: &mut Vec<egui::Rect>) {
+        match shape {
+            egui::Shape::Rect(rs) if rs.fill == fill => out.push(rs.rect),
+            egui::Shape::Vec(shapes) => {
+                for s in shapes {
+                    collect_card_rects(s, fill, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Règle de contraste des boutons, sur les deux thèmes et tous les
+    /// états : tout fond opaque sombre porte une typo quasi blanche, tout
+    /// fond clair une typo sombre ; tout état activé respecte l'AA
+    /// (≥ 4,5:1), tout état désactivé reste visible (≥ 3:1). Au repos, un
+    /// bouton transparent se lit sur sa surface porteuse : la carte, ou le
+    /// fond de travail pour un Ghost posé hors cartes.
+    #[test]
+    fn boutons_fond_noir_typo_blanche_et_contraste_aa() {
+        for dark in [true, false] {
+            let p = Palette::new(if dark {
+                crate::config::ThemeKind::Dark
+            } else {
+                crate::config::ThemeKind::Light
+            });
+            for kind in [
+                BtnKind::Primary,
+                BtnKind::Danger,
+                BtnKind::Ghost,
+                BtnKind::GhostOnBg,
+                BtnKind::Soft,
+            ] {
+                for (enabled, hovered, pressed) in [
+                    (true, false, false),
+                    (true, true, false),
+                    (true, false, true),
+                    (false, false, false),
+                ] {
+                    let (fill, _, text) = btn_colors(&p, kind, enabled, hovered, pressed);
+                    let surface = if fill.a() > 0 {
+                        fill
+                    } else if kind == BtnKind::GhostOnBg {
+                        p.bg
+                    } else {
+                        p.card
+                    };
+                    let case = format!("{kind:?} dark={dark} h={hovered} p={pressed}");
+                    let c = contrast(text, surface);
+                    if enabled {
+                        assert!(c >= 4.5, "AA attendu ({case}) : {c:.2}");
+                        let (ls, lt) = (
+                            crate::theme::luminance(surface),
+                            crate::theme::luminance(text),
+                        );
+                        if ls <= crate::theme::MID_GRAY_LUMINANCE {
+                            assert!(
+                                lt >= 0.7,
+                                "fond noir ⇒ typo quasi blanche ({case})"
+                            );
+                        } else {
+                            assert!(lt <= 0.1, "fond clair ⇒ typo sombre ({case})");
+                        }
+                    } else {
+                        assert!(c >= 3.0, "désactivé illisible ({case}) : {c:.2}");
+                    }
+                }
+            }
+        }
     }
 }

@@ -233,7 +233,9 @@ fn apply_confirm(app: &mut GuiApp, kind: &ConfirmKind) {
 fn danger_btn(p: &Palette, label: &str) -> egui::Button<'static> {
     egui::Button::new(
         RichText::new(label)
-            .color(Color32::WHITE)
+            // Typo selon la luminance du danger : le rose clair du thème
+            // sombre porte du sombre, le rouge du thème clair du blanc.
+            .color(crate::theme::on_fill(p, p.danger))
             .family(egui::FontFamily::Name("Medium".into())),
     )
     .fill(p.danger)

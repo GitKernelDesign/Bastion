@@ -16,7 +16,8 @@ pub struct Palette {
     pub border: Color32,
     pub text: Color32,
     pub text_secondary: Color32,
-    /// Texte posé directement sur le fond de travail (hors cartes).
+    /// Texte sombre pour les surfaces claires : fond de travail (hors
+    /// cartes) et remplissages clairs de boutons (accent, danger).
     pub on_bg: Color32,
     pub on_bg_secondary: Color32,
     pub accent: Color32,
@@ -139,6 +140,42 @@ pub fn hex(s: &str) -> Color32 {
     )
 }
 
+/// Luminance relative WCAG d'une couleur : 0 (noir) à 1 (blanc).
+pub fn luminance(c: Color32) -> f32 {
+    let lin = |v: u8| {
+        let s = v as f32 / 255.0;
+        if s <= 0.04045 {
+            s / 12.92
+        } else {
+            ((s + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * lin(c.r()) + 0.7152 * lin(c.g()) + 0.0722 * lin(c.b())
+}
+
+/// Luminance du gris moyen (sRGB 128 ≈ 0,216) : seuil séparant les fonds
+/// « clairs » des fonds « sombres ». Les couleurs de la palette se
+/// répartissent nettement de part et d'autre — aucune ne tombe dans la
+/// zone médiane où ni le blanc ni le sombre n'atteindraient 4,5:1.
+pub const MID_GRAY_LUMINANCE: f32 = 0.21;
+
+/// Un remplissage opaque est-il clair (doit porter une typo sombre) ou
+/// sombre (doit porter une typo blanche) ?
+pub fn fill_is_light(fill: Color32) -> bool {
+    luminance(fill) > MID_GRAY_LUMINANCE
+}
+
+/// Typographie à poser sur un remplissage opaque : blanche si le fond est
+/// sombre, `on_bg` (sombre) s'il est clair — garantit le contraste AA
+/// (≥ 4,5:1) sur les deux thèmes.
+pub fn on_fill(p: &Palette, fill: Color32) -> Color32 {
+    if fill_is_light(fill) {
+        p.on_bg
+    } else {
+        Color32::WHITE
+    }
+}
+
 /// Applique le style global (palette + espacement + typographie).
 /// Retourne la palette correspondante.
 pub fn apply(ctx: &Context, kind: ThemeKind, font_scale: f32) -> Palette {
@@ -172,12 +209,14 @@ pub fn apply(ctx: &Context, kind: ThemeKind, font_scale: f32) -> Palette {
     v.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, p.accent);
     v.widgets.active.bg_fill = p.accent;
     v.widgets.active.weak_bg_fill = p.accent;
-    v.widgets.active.fg_stroke = egui::Stroke::new(1.0, Color32::WHITE);
+    // Typo sur l'accent (bouton appuyé) : l'accent est clair sur les deux
+    // thèmes — le blanc ne ferait que 2,8:1 en sombre, 3,5:1 en clair.
+    v.widgets.active.fg_stroke = egui::Stroke::new(1.0, on_fill(&p, p.accent));
     v.widgets.open.bg_fill = p.card_hover;
     v.widgets.open.bg_stroke = egui::Stroke::new(1.0, p.accent);
 
     v.selection.bg_fill = p.accent;
-    v.selection.stroke = egui::Stroke::new(1.0, Color32::WHITE);
+    v.selection.stroke = egui::Stroke::new(1.0, on_fill(&p, p.accent));
 
     // Coins arrondis homogènes (8 px widgets, 10-12 px fenêtres/menus).
     let r = egui::CornerRadius::same(8);
@@ -229,6 +268,13 @@ fn theme_sombre_et_clair_bien_appliques() {
     let st = ctx.style_of(egui::Theme::Dark);
     assert_eq!(st.visuals.panel_fill, crate::theme::hex("#AB7F73"), "panel_fill sombre");
     assert_eq!(st.visuals.widgets.inactive.bg_fill, crate::theme::hex("#211B17"), "widget bg sombre");
+    // Bouton appuyé : l'accent du thème sombre est clair, la typo qui
+    // porte dessus doit être sombre (le blanc ne ferait que 2,8:1).
+    assert_eq!(
+        st.visuals.widgets.active.fg_stroke.color,
+        crate::theme::hex("#2A1E19"),
+        "typo sur accent appuyé"
+    );
 
     // Clair actif.
     crate::theme::apply(&ctx, crate::config::ThemeKind::Light, 1.0);
@@ -249,5 +295,29 @@ fn theme_sombre_et_clair_bien_appliques() {
     });
     let mut out = ctx.end_pass();
     out.textures_delta.clear();
+}
+
+/// Luminance WCAG et choix de typo sur un remplissage : les couleurs de
+/// la palette se répartissent nettement de part et d'autre du gris moyen —
+/// accent et danger du thème sombre sont clairs (typo sombre), danger du
+/// thème clair et fonds sombres portent du blanc.
+#[test]
+fn luminance_et_typo_sur_remplissage() {
+    // Repères WCAG : noir 0, blanc 1, gris moyen sRGB (128) ≈ 0,216.
+    assert!(luminance(hex("#000000")) < 1e-6, "noir");
+    assert!((luminance(hex("#FFFFFF")) - 1.0).abs() < 1e-6, "blanc");
+    assert!(
+        (luminance(Color32::from_gray(128)) - 0.216).abs() < 0.002,
+        "gris moyen"
+    );
+
+    let d = Palette::new(ThemeKind::Dark);
+    let l = Palette::new(ThemeKind::Light);
+    assert_eq!(on_fill(&d, d.accent), d.on_bg, "accent sombre : fond clair");
+    assert_eq!(on_fill(&d, d.danger), d.on_bg, "danger sombre : fond clair");
+    assert_eq!(on_fill(&l, l.accent), l.on_bg, "accent clair : fond clair");
+    assert_eq!(on_fill(&l, l.danger), Color32::WHITE, "danger clair : fond sombre");
+    assert_eq!(on_fill(&d, d.card), Color32::WHITE, "carte sombre");
+    assert_eq!(on_fill(&l, l.card), l.on_bg, "carte claire");
 }
 

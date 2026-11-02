@@ -108,12 +108,12 @@ fn launch_gui() {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(title)
-            // Largeur volontairement bornée à 620 px : l'application se
-            // veut compacte ; 620 < COMPACT_MAX_WIDTH (720) garantit que la
-            // présentation mobile (navigation basse, une colonne) est
-            // toujours active. La hauteur reste libre.
+            // Largeur libre : l'application est conçue mobile-first —
+            // sous 720 px (COMPACT_MAX_WIDTH) elle reste compacte
+            // (navigation basse, tuiles empilées) ; au-delà, la barre
+            // latérale apparaît, les cartes se placent côte à côte à
+            // hauteur égale et les tableaux disposent de toute la largeur.
             .with_inner_size([620.0, 820.0])
-            .with_max_inner_size([620.0, 10_000.0])
             // La fenêtre peut être réduite à la taille d'un téléphone.
             .with_min_inner_size([360.0, 480.0])
             .with_icon(std::sync::Arc::new(icon)),

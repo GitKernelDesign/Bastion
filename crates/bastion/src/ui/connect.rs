@@ -259,7 +259,8 @@ fn save_profile(app: &mut GuiApp) {
 fn primary_button(p: &crate::theme::Palette, t: &crate::i18n::Tr) -> egui::Button<'static> {
     egui::Button::new(
         RichText::new(t.connect_btn)
-            .color(egui::Color32::WHITE)
+            // L'accent est clair sur les deux thèmes : typo sombre dessus.
+            .color(crate::theme::on_fill(p, p.accent))
             .family(egui::FontFamily::Name("Medium".into())),
     )
     .fill(p.accent)

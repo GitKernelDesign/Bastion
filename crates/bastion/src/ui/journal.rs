@@ -113,7 +113,8 @@ fn filter_buttons(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette, t: &crate::i
         let sel = app.filter == f;
         let btn = egui::Button::new(
             RichText::new(label).size(12.5).color(if sel {
-                egui::Color32::WHITE
+                // Filtre actif : l'accent est clair, la typo est sombre.
+                crate::theme::on_fill(p, p.accent)
             } else {
                 p.text_secondary
             }),
