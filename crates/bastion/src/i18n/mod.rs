@@ -410,6 +410,7 @@ pub struct Tr {
     pub clam_scan_clean_short: &'static str,
     pub clam_scan_threats: &'static str,
     pub clam_scan_none_yet: &'static str,
+    pub clam_scan_running: &'static str,
     pub journal_col_time: &'static str,
     pub journal_col_status: &'static str,
     pub journal_col_command: &'static str,

@@ -550,6 +550,6 @@ point de bascule), pas d'onglets internes aux écrans (le défilement suffit), p
 graphiques ni de jauges (des chiffres et des états suffisent), pas de densité
 « dashboard » (les lignes respirent à 34 px).
 
-**Vérification** : 13 captures hors écran (clair/sombre, compact/large, FR/EN/DE)
-produites par un test ignoré, contrastes AA testés unitairement, 48 tests verts,
+**Vérification** : 14 captures hors écran (clair/sombre, compact/large, FR/EN/DE)
+produites par un test ignoré, contrastes AA testés unitairement, 49 tests verts,
 `cargo check` sans avertissement.

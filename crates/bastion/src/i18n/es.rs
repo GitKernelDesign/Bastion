@@ -325,6 +325,7 @@ pub const TR: Tr = Tr {
     clam_scan_clean_short: "Ninguna amenaza detectada",
     clam_scan_threats: "archivo(s) infectado(s)",
     clam_scan_none_yet: "No se ha ejecutado ningún análisis en esta sesión.",
+    clam_scan_running: "Análisis en curso…",
     journal_col_time: "Hora",
     journal_col_status: "Estado",
     journal_col_command: "Comando",

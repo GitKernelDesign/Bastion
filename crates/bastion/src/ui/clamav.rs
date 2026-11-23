@@ -9,6 +9,7 @@ use crate::theme::{space, text, Palette};
 use bastion_core::model::ClamLogSource;
 use bastion_core::op::{Op, ServiceAction};
 use egui::{Align, CornerRadius, Frame, Layout, Margin, RichText};
+use std::time::{Duration, Instant};
 
 pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     let t = app.tr;
@@ -331,6 +332,8 @@ fn scan_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     let mut scan = false;
     let mut copy = false;
     let busy = app.pending.values().any(|x| matches!(x, Pending::ClamScan));
+    // Compteur affiché à côté de la roue pendant l'analyse.
+    let elapsed = app.clam.scan_started.map(|t| t.elapsed()).unwrap_or_default();
     let daemon_active = app.clam.daemon.as_deref() == Some("active");
     // Le sélecteur de dossier n'a de sens qu'en local : en SSH, la cible
     // est distante et seul le chemin saisi à la main s'applique.
@@ -345,13 +348,17 @@ fn scan_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
         );
         let avail = ui.available_width();
         let inline = avail >= 560.0;
+        // En analyse, la roue et le compteur occupent le bout de la ligne :
+        // on réduit le champ d'autant pour que le compteur ne passe pas seul
+        // à la ligne suivante.
+        let controls_w = if busy { 385.0 } else { 330.0 };
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
             let resp = ui.add(
                 egui::TextEdit::singleline(&mut app.clam.scan_path)
                     .hint_text(t.clam_scan_hint)
                     .desired_width(if inline {
-                        (avail - 330.0).max(160.0)
+                        (avail - controls_w).max(160.0)
                     } else {
                         (ui.available_width() - 8.0).max(160.0)
                     })
@@ -396,13 +403,23 @@ fn scan_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 150.0,
             );
             if busy {
+                // Roue rouge : le bouton est désactivé pendant l'analyse,
+                // son fond neutre rend la teinte danger parfaitement lisible.
                 let r = busy_btn.rect;
-                egui::Spinner::new().size(15.0).paint_at(
+                egui::Spinner::new().size(15.0).color(p.danger).paint_at(
                     ui,
                     egui::Rect::from_min_size(
                         egui::pos2(r.left() + 14.0, r.center().y - 7.5),
                         egui::vec2(15.0, 15.0),
                     ),
+                );
+                ui.add_space(2.0);
+                ui.label(icons::icon_sz(icons::TIMER, 14.0, p.danger));
+                ui.label(
+                    RichText::new(elapsed_label(elapsed))
+                        .monospace()
+                        .size(text::SMALL)
+                        .color(p.danger),
                 );
             }
             if busy_btn.clicked() {
@@ -416,7 +433,16 @@ fn scan_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
         ui.add_space(space::M);
         match &app.clam.last_scan {
             None => {
-                components::hint(ui, p, t.clam_scan_none_yet);
+                if busy {
+                    ui.label(
+                        RichText::new(t.clam_scan_running)
+                            .size(text::SMALL)
+                            .color(p.danger)
+                            .family(egui::FontFamily::Name("Medium".into())),
+                    );
+                } else {
+                    components::hint(ui, p, t.clam_scan_none_yet);
+                }
             }
             Some((infected, at)) => {
                 let clean = infected.is_empty();
@@ -488,6 +514,7 @@ fn scan_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
 
     if scan && !busy {
         let path = app.clam.scan_path.trim().to_string();
+        app.clam.scan_started = Some(Instant::now());
         app.send_op(
             Pending::ClamScan,
             Op::ClamScan {
@@ -506,5 +533,29 @@ fn scan_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
             ui.ctx().copy_text(text);
             app.toasts.info(t.journal_copied_toast.to_string());
         }
+    }
+}
+
+/// Compteur d'analyse compact : `0:07`, `12:03`, `1:02:09`.
+fn elapsed_label(d: Duration) -> String {
+    let total = d.as_secs();
+    if total >= 3600 {
+        format!("{}:{:02}:{:02}", total / 3600, (total / 60) % 60, total % 60)
+    } else {
+        format!("{}:{:02}", total / 60, total % 60)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::elapsed_label;
+    use std::time::Duration;
+
+    #[test]
+    fn compteur_analyse_compact() {
+        assert_eq!(elapsed_label(Duration::from_secs(0)), "0:00");
+        assert_eq!(elapsed_label(Duration::from_secs(7)), "0:07");
+        assert_eq!(elapsed_label(Duration::from_secs(65)), "1:05");
+        assert_eq!(elapsed_label(Duration::from_secs(3600 + 125)), "1:02:05");
     }
 }

@@ -8,7 +8,7 @@
 //! cargo test --bin bastion captures -- --ignored --nocapture
 //! ```
 
-use crate::app::{ConnPhase, GuiApp, Screen};
+use crate::app::{ConnPhase, GuiApp, Pending, Screen};
 use crate::config::AppConfig;
 use crate::i18n::Lang;
 use crate::theme::Palette;
@@ -42,6 +42,7 @@ fn cases() -> Vec<Case> {
         Case { name: "fail2ban", screen: Screen::Fail2Ban, dark: false, size: compact, lang: Lang::Fr },
         Case { name: "fail2ban-large", screen: Screen::Fail2Ban, dark: true, size: wide, lang: Lang::Fr },
         Case { name: "antivirus", screen: Screen::Antivirus, dark: false, size: compact, lang: Lang::Fr },
+        Case { name: "antivirus-analyse", screen: Screen::Antivirus, dark: false, size: tall, lang: Lang::Fr },
         Case { name: "journal", screen: Screen::Journal, dark: false, size: wide, lang: Lang::Fr },
         Case { name: "reglages", screen: Screen::Settings, dark: false, size: compact, lang: Lang::Fr },
         Case { name: "reglages-sombre", screen: Screen::Settings, dark: true, size: compact, lang: Lang::Fr },
@@ -70,6 +71,14 @@ fn captures() {
                 app.conn_desc.clear();
             }
             Screen::Fail2Ban => app.f2b.selected_jail = Some("sshd".into()),
+            Screen::Antivirus => {
+                if case.name == "antivirus-analyse" {
+                    // Analyse en cours depuis 42 s : roue rouge + compteur.
+                    app.clam.scan_started =
+                        Some(Instant::now() - Duration::from_secs(42));
+                    app.pending.insert(999, Pending::ClamScan);
+                }
+            }
             _ => {}
         }
         app.screen = case.screen;

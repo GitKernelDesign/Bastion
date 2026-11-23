@@ -62,7 +62,7 @@ Le détail des choix (personas, parcours, décisions refusées) est dans **[docs
 ### Antivirus ClamAV
 - État des services `clamav-daemon` et `clamav-freshclam` (démarrer / redémarrer / arrêter) ;
 - Bases de signatures : moteur, nombre de signatures, date, mise à jour à la demande ;
-- Analyse à la demande d'un chemin (via le démon quand il est actif, sinon autonome) — lecture seule, aucun fichier n'est modifié ni supprimé ; résultats listés en clair ;
+- Analyse à la demande d'un chemin (via le démon quand il est actif, sinon autonome) — lecture seule, aucun fichier n'est modifié ni supprimé ; pendant l'analyse, roue rouge et compteur de temps, puis résultats listés en clair ;
 - Journaux `clamd` et `freshclam`.
 
 ### Accès
@@ -109,7 +109,7 @@ La langue se choisit dans **Paramètres → Apparence → Langue** (FR / EN / ES
 ```bash
 # Prérequis : Rust (rustup), gcc (paquet build-essential)
 cargo build --release            # binaire : target/release/bastion
-cargo test --offline             # 48 tests : parseurs, liste blanche, protocole, i18n, mise en page, contrastes
+cargo test --offline             # 49 tests : parseurs, liste blanche, protocole, i18n, mise en page, contrastes
 cargo check --offline            # aucun avertissement attendu
 # Deux tests sont ignorés par défaut, dont le harnais de captures (ci-dessous).
 
@@ -147,7 +147,7 @@ crates/
     ├── toast.rs          # Notifications ancrées au-dessus de la barre d'état
     ├── glibc_compat.rs   # Shim GLIBC : l'AppImage n'exige que la 2.39
     ├── i18n/             # Traductions FR / EN / ES / DE / PT / IT / UK / RU, détection
-    ├── snapshots.rs      # Harnais de captures (rastériseur + PNG, 13 cas)
+    ├── snapshots.rs      # Harnais de captures (rastériseur + PNG, 14 cas)
     └── ui/               # 6 écrans (connexion, pare-feu, fail2ban, antivirus, journal, réglages)
 ```
 

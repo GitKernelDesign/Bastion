@@ -152,6 +152,8 @@ pub struct ClamUi {
     pub picking: bool,
     /// Dernier résultat d'analyse (fichiers infectés, horodatage).
     pub last_scan: Option<(Vec<(String, String)>, Instant)>,
+    /// Début de l'analyse en cours (compteur de temps de l'écran).
+    pub scan_started: Option<Instant>,
 }
 
 impl Default for ClamUi {
@@ -166,6 +168,7 @@ impl Default for ClamUi {
             scan_path: String::new(),
             picking: false,
             last_scan: None,
+            scan_started: None,
         }
     }
 }
@@ -804,6 +807,7 @@ impl GuiApp {
                 self.send_op(Pending::ClamDb, Op::ClamDbInfo);
             }
             Pending::ClamScan => {
+                self.clam.scan_started = None;
                 if let OpResult::ClamScanResult(r) = res {
                     self.clam.last_scan = Some((r.infected.clone(), Instant::now()));
                     if r.infected.is_empty() {
@@ -842,6 +846,9 @@ impl GuiApp {
     }
 
     fn apply_op_err(&mut self, pending: Pending, e: bastion_core::CoreError) {
+        if matches!(&pending, Pending::ClamScan) {
+            self.clam.scan_started = None;
+        }
         let msg = self.tr.localize_error(&e);
         let is_refresh = matches!(
             pending,
