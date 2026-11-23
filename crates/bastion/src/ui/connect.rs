@@ -1,17 +1,20 @@
 //! Écran Connexion : cible locale ou SSH, profils enregistrés, état de session.
+//!
+//! Hiérarchie : deux cartes (cette machine / SSH), un seul bouton principal
+//! par carte, les options rares repliées. Les identifiants ne quittent jamais
+//! la mémoire.
 
 use crate::app::{ConnPhase, GuiApp, HostKeyCtx, Modal};
 use crate::components;
 use crate::config::{ProfileAuth, SshProfileDef};
+use crate::theme::{space, text, Palette};
 use crate::worker::Job;
-use egui::{Align, Layout, RichText};
 use bastion_core::ssh::{SshAuth, SshParams};
+use egui::{Align, CornerRadius, Frame, Layout, Margin, RichText, Stroke};
 use std::path::PathBuf;
 
-pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &crate::theme::Palette) {
+pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     let t = app.tr;
-    components::screen_header(ui, p, t.nav_connect, t.connect_subtitle);
-    ui.add_space(6.0);
 
     if app.phase == ConnPhase::Connected {
         session_summary(app, ui, p);
@@ -25,151 +28,282 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &crate::theme::Palette) {
         _ => ssh_card(app, ui, p),
     });
 
-    ui.add_space(10.0);
+    ui.add_space(space::M);
     components::hint_on_bg(ui, p, t.privacy_note);
 }
 
-fn session_summary(app: &mut GuiApp, ui: &mut egui::Ui, p: &crate::theme::Palette) {
+// ─── Session en cours ────────────────────────────────────────────────────────
+fn session_summary(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     let t = app.tr;
     components::card_body(ui, p, |ui| {
         ui.horizontal(|ui| {
             components::status_line(ui, p, p.success, t.session_active, None);
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if components::danger_button(ui, p, t.disconnect_btn).clicked() {
+                if components::styled_button(
+                    ui,
+                    p,
+                    &format!("{}  {}", crate::icons::LOGOUT, t.disconnect_btn),
+                    components::BtnKind::Ghost,
+                )
+                .clicked()
+                {
                     app.expect_disconnect = true;
                     app.worker.send(Job::Disconnect);
                 }
             });
         });
-        ui.add_space(8.0);
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(t.target_label).size(12.5).color(p.text_secondary));
-            ui.label(
-                RichText::new(&app.conn_desc)
-                    .monospace()
-                    .family(egui::FontFamily::Name("MonoMedium".into())),
-            );
+        ui.add_space(space::M);
+
+        egui::Grid::new("session-grid")
+            .num_columns(2)
+            .spacing([16.0, 8.0])
+            .show(ui, |ui| {
+                ui.label(RichText::new(t.target_label).size(text::SMALL).color(p.text_secondary));
+                ui.label(
+                    RichText::new(&app.conn_desc)
+                        .monospace()
+                        .family(egui::FontFamily::Name("MonoMedium".into())),
+                );
+                ui.end_row();
+                ui.label(RichText::new(t.tools_label).size(text::SMALL).color(p.text_secondary));
+                ui.horizontal(|ui| {
+                    tool_badge(ui, p, "ufw", app.probe.0.as_deref(), app.tr);
+                    tool_badge(ui, p, "Fail2Ban", app.probe.1.as_deref(), app.tr);
+                });
+                ui.end_row();
+            });
+
+        ui.add_space(space::M);
+        ui.horizontal_wrapped(|ui| {
+            if components::primary_button(
+                ui,
+                p,
+                &format!("{}  {}", crate::icons::SECURITY, t.nav_firewall),
+            )
+            .clicked()
+            {
+                app.screen = crate::app::Screen::Firewall;
+            }
+            if components::ghost_button(ui, p, &format!("{}  {}", crate::icons::BAN, t.nav_fail2ban))
+                .clicked()
+            {
+                app.screen = crate::app::Screen::Fail2Ban;
+            }
+            if components::ghost_button(ui, p, t.nav_journal).clicked() {
+                app.screen = crate::app::Screen::Journal;
+            }
         });
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(t.tools_label).size(12.5).color(p.text_secondary));
-            ui.label(probe_ufw_text(app));
-            ui.label("·");
-            ui.label(probe_f2b_text(app));
-        });
-        ui.add_space(4.0);
+        ui.add_space(space::S);
         components::hint(ui, p, t.session_hint);
     });
 }
 
-fn probe_ufw_text(app: &GuiApp) -> String {
-    app.probe
-        .0
-        .clone()
-        .unwrap_or_else(|| app.tr.probe_unknown_ufw.to_string())
-}
-
-fn probe_f2b_text(app: &GuiApp) -> String {
-    app.probe
-        .1
-        .clone()
-        .unwrap_or_else(|| app.tr.probe_unknown_f2b.to_string())
-}
-
-fn local_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &crate::theme::Palette) {
+// ─── Cette machine ───────────────────────────────────────────────────────────
+fn local_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     let t = app.tr;
     components::card_body(ui, p, |ui| {
-        ui.horizontal(|ui| {
-            ui.label(crate::icons::icon_sz(crate::icons::COMPUTER, 20.0, p.accent));
-            ui.label(
-                RichText::new(t.local_card_title)
-                    .size(15.0)
-                    .family(egui::FontFamily::Name("SemiBold".into())),
-            );
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                components::badge(ui, p, t.badge_local, p.text_secondary, p.card_hover);
-            });
+        card_head(ui, p, crate::icons::COMPUTER, t.local_card_title, t.badge_local);
+        ui.add_space(space::S);
+
+        ui.horizontal_wrapped(|ui| {
+            tool_badge(ui, p, "ufw", app.probe.0.as_deref(), t);
+            tool_badge(ui, p, "Fail2Ban", app.probe.1.as_deref(), t);
         });
-        ui.add_space(8.0);
-        components::hint(ui, p, &format!("{}\n{}", probe_ufw_text(app), probe_f2b_text(app)));
-        ui.add_space(10.0);
+        ui.add_space(space::S);
 
         if app.phase == ConnPhase::Connecting && !app.form.mode_ssh {
             components::loading(ui, p, t.local_wait_msg);
-        } else if components::primary_button(ui, p, t.connect_btn).clicked() {
-            app.form.mode_ssh = false;
-            app.phase = ConnPhase::Connecting;
-            let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("bastion"));
-            app.worker.send(Job::ConnectLocal { app_exe: exe });
+        } else {
+            let resp = components::styled_button_fill(
+                ui,
+                p,
+                &format!("{}  {}", crate::icons::POWER, t.connect_btn),
+                components::BtnKind::Primary,
+                app.phase == ConnPhase::Disconnected,
+            );
+            if resp.clicked() {
+                app.form.mode_ssh = false;
+                app.phase = ConnPhase::Connecting;
+                let exe =
+                    std::env::current_exe().unwrap_or_else(|_| PathBuf::from("bastion"));
+                app.worker.send(Job::ConnectLocal { app_exe: exe });
+            }
         }
-        ui.add_space(2.0);
+        ui.add_space(space::S);
         components::hint(ui, p, t.local_password_hint);
     });
 }
 
-fn ssh_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &crate::theme::Palette) {
-    let t = app.tr;
-    components::card_body(ui, p, |ui| {
-        ui.horizontal(|ui| {
-            ui.label(crate::icons::icon_sz(crate::icons::TERMINAL_SSH, 20.0, p.accent));
-            ui.label(
-                RichText::new(t.ssh_card_title)
-                    .size(15.0)
-                    .family(egui::FontFamily::Name("SemiBold".into())),
-            );
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                components::badge(ui, p, "SSH", p.accent, p.card_hover);
+/// En-tête de carte : icône dans une pastille teintée, titre, badge à droite.
+fn card_head(ui: &mut egui::Ui, p: &Palette, icon: &str, title: &str, badge: &str) {
+    ui.horizontal(|ui| {
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(38.0, 38.0), egui::Sense::hover());
+        ui.painter()
+            .rect_filled(rect, CornerRadius::same(11), p.soft(p.accent));
+        let g = ui.painter().layout_no_wrap(
+            icon.to_string(),
+            egui::FontId::new(20.0, egui::FontFamily::Name("Icon".into())),
+            p.accent,
+        );
+        ui.painter()
+            .galley(rect.center() - g.size() * 0.5, g, p.accent);
+        ui.add_space(2.0);
+        ui.label(
+            RichText::new(title)
+                .size(16.0)
+                .color(p.text)
+                .family(egui::FontFamily::Name("SemiBold".into())),
+        );
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            components::badge(ui, p, badge, p.text_secondary, p.card_hover);
+        });
+    });
+}
+
+/// Retire le nom de l'outil en tête de la version (« ufw 0.36.2 » → « 0.36.2 »),
+/// le nom étant déjà affiché dans la pastille.
+fn strip_tool_name<'a>(probe: &'a str, name: &str) -> &'a str {
+    let head = probe.get(..name.len()).unwrap_or_default();
+    if head.eq_ignore_ascii_case(name) {
+        probe[name.len()..]
+            .trim_start_matches([' ', '-', ':', '/'])
+            .trim()
+    } else {
+        probe.trim()
+    }
+}
+
+/// Pastille d'outil : nom + version détectée (ou état inconnu).
+fn tool_badge(
+    ui: &mut egui::Ui,
+    p: &Palette,
+    name: &str,
+    probe: Option<&str>,
+    t: &crate::i18n::Tr,
+) {
+    let (tone, value, tip) = match probe {
+        Some(v) => (
+            p.success,
+            components::ellipsize(strip_tool_name(v, name), 26),
+            String::new(),
+        ),
+        None => (
+            p.warning,
+            t.state_unknown.to_string(),
+            if name == "ufw" {
+                t.probe_unknown_ufw
+            } else {
+                t.probe_unknown_f2b
+            }
+            .to_string(),
+        ),
+    };
+    Frame::NONE
+        .fill(p.soft(tone))
+        .corner_radius(CornerRadius::same(8))
+        .inner_margin(Margin::symmetric(9, 5))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(6.0, 0.0);
+                ui.label(crate::icons::icon_sz(
+                    if probe.is_some() {
+                        crate::icons::CHECK_CIRCLE
+                    } else {
+                        crate::icons::WARNING
+                    },
+                    13.0,
+                    tone,
+                ));
+                let label = ui.label(
+                    RichText::new(name)
+                        .size(text::MICRO)
+                        .color(p.text)
+                        .family(egui::FontFamily::Name("Medium".into())),
+                );
+                if !tip.is_empty() {
+                    label.on_hover_text(&tip);
+                }
+                ui.label(RichText::new(value).size(text::MICRO).monospace().color(p.text_secondary));
             });
         });
-        ui.add_space(8.0);
+}
 
-        // Profil enregistré.
+// ─── À distance (SSH) ────────────────────────────────────────────────────────
+fn ssh_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
+    let t = app.tr;
+    components::card_body(ui, p, |ui| {
+        card_head(ui, p, crate::icons::TERMINAL_SSH, t.ssh_card_title, "SSH");
+        ui.add_space(space::M);
+
+        // Profils enregistrés.
         if !app.cfg.profiles.is_empty() {
             let current = app
                 .form
                 .profile_name
                 .clone()
                 .unwrap_or_else(|| t.profile_placeholder.to_string());
-            egui::ComboBox::from_id_salt("ssh-profile")
-                .selected_text(current)
-                .show_ui(ui, |ui| {
-                    for prof in app.cfg.profiles.clone() {
-                        if ui.selectable_label(false, &prof.name).clicked() {
-                            app.form.profile_name = Some(prof.name.clone());
-                            load_profile_into(app, &prof);
+            ui.horizontal(|ui| {
+                let del_w = if app.form.profile_name.is_some() { 34.0 } else { 0.0 };
+                egui::ComboBox::from_id_salt("ssh-profile")
+                    .selected_text(current)
+                    .width((ui.available_width() - del_w).max(120.0))
+                    .show_ui(ui, |ui| {
+                        for prof in app.cfg.profiles.clone() {
+                            let selected = app.form.profile_name.as_deref() == Some(&prof.name);
+                            if ui
+                                .selectable_label(
+                                    selected,
+                                    format!("{}  ·  {}@{}", prof.name, prof.user, prof.host),
+                                )
+                                .clicked()
+                            {
+                                app.form.profile_name = Some(prof.name.clone());
+                                load_profile_into(app, &prof);
+                            }
                         }
-                    }
-                });
-            if let Some(name) = app.form.profile_name.clone() {
-                if ui
-                    .add(egui::Button::new(RichText::new(t.profile_delete).size(12.0)))
+                    });
+                if let Some(name) = app.form.profile_name.clone() {
+                    if components::icon_danger_button(
+                        ui,
+                        p,
+                        crate::icons::DELETE,
+                        t.profile_delete,
+                    )
                     .clicked()
-                {
-                    app.cfg.delete_profile(&name);
-                    app.form.profile_name = None;
+                    {
+                        app.cfg.delete_profile(&name);
+                        app.form.profile_name = None;
+                    }
                 }
-            }
-            ui.add_space(6.0);
+            });
+            ui.add_space(space::S);
         }
 
         let form = &mut app.form;
         components::field(ui, p, t.field_host, &mut form.host, t.hint_host);
         ui.horizontal(|ui| {
-            ui.allocate_ui_with_layout(
-                egui::vec2(ui.available_width() * 0.3, 60.0),
-                Layout::left_to_right(Align::Min),
-                |ui| components::field(ui, p, t.field_port, &mut form.port, ""),
-            );
-            ui.allocate_ui_with_layout(
-                ui.available_size(),
-                Layout::left_to_right(Align::Min),
-                |ui| components::field(ui, p, t.field_user, &mut form.user, t.hint_user),
-            );
+            let port_w = 92.0;
+            components::field_sized(ui, p, t.field_port, &mut form.port, "", port_w);
+            let user_w = ui.available_width();
+            components::field_sized(ui, p, t.field_user, &mut form.user, t.hint_user, user_w);
         });
-        ui.add_space(2.0);
+        ui.add_space(space::XS);
 
+        ui.label(
+            RichText::new(t.field_auth_method)
+                .size(text::SMALL)
+                .color(p.text_secondary),
+        );
+        ui.add_space(2.0);
         let mut key = form.auth_key;
-        components::segmented(ui, p, &[(false, t.auth_password), (true, t.auth_key)], &mut key);
+        components::segmented_fill(
+            ui,
+            p,
+            &[(false, t.auth_password), (true, t.auth_key)],
+            &mut key,
+        );
         form.auth_key = key;
+        ui.add_space(space::S);
 
         if form.auth_key {
             components::field(ui, p, t.field_key_path, &mut form.key_path, "");
@@ -177,54 +311,101 @@ fn ssh_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &crate::theme::Palette) {
         } else {
             components::password_field(ui, p, t.field_password, &mut form.password);
         }
-        ui.add_space(2.0);
 
-        if ui.checkbox(&mut form.use_sudo, t.use_sudo).on_hover_text(t.use_sudo_hint).changed() {
-            // rien de plus à faire : l'état est lu à la connexion
-        }
-        if form.use_sudo {
-            components::password_field(ui, p, t.field_sudo_password, &mut form.sudo_password);
-        }
-        ui.add_space(4.0);
+        ui.add_space(space::M);
 
-        // Enregistrement du profil (emprunt de form terminé avant d'appeler app).
         let ready = {
-            let f = &mut app.form;
+            let f = &app.form;
             !f.host.trim().is_empty() && !f.user.trim().is_empty()
         };
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing = egui::vec2(8.0, 6.0);
-            if ui
-                .add_enabled(
-                    ready,
-                    egui::TextEdit::singleline(&mut app.form.save_name)
-                        .hint_text(t.save_profile_placeholder)
-                        .desired_width((ui.available_width() - 140.0).clamp(140.0, 220.0)),
-                )
-                .lost_focus()
-                && ui.input(|i| i.key_pressed(egui::Key::Enter))
-            {
-                save_profile(app);
-            }
-            if ui
-                .add_enabled(ready, egui::Button::new(t.save_profile_btn))
-                .clicked()
-            {
-                save_profile(app);
-            }
-        });
-        ui.add_space(6.0);
-
         if app.phase == ConnPhase::Connecting && app.form.mode_ssh {
             components::loading(ui, p, t.status_connecting);
-        } else if ui
-            .add_enabled(ready, primary_button(p, t))
-            .clicked()
-        {
-            connect_ssh(app);
+        } else {
+            let resp = components::styled_button_fill(
+                ui,
+                p,
+                &format!("{}  {}", crate::icons::LOGIN, t.connect_btn),
+                components::BtnKind::Primary,
+                ready,
+            );
+            if resp.clicked() {
+                connect_ssh(app);
+            }
         }
-        ui.add_space(2.0);
+        ui.add_space(space::S);
         components::hint(ui, p, t.ssh_fingerprint_hint);
+
+        // Options rares, repliées : sudo et enregistrement du profil.
+        ui.add_space(space::S);
+        let mut open = app.form.show_options;
+        let chevron = if open {
+            crate::icons::EXPAND_LESS
+        } else {
+            crate::icons::EXPAND_MORE
+        };
+        if components::link_button(ui, p, &format!("{chevron}  {}", t.ssh_options)).clicked() {
+            open = !open;
+            app.form.show_options = open;
+        }
+        if open {
+            ui.add_space(space::S);
+            Frame::NONE
+                .fill(p.field)
+                .stroke(Stroke::new(1.0, p.border))
+                .corner_radius(CornerRadius::same(10))
+                .inner_margin(Margin::same(12))
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    let mut sudo = app.form.use_sudo;
+                    if components::switch_row(
+                        ui,
+                        p,
+                        sudo,
+                        true,
+                        t.use_sudo,
+                        t.use_sudo_hint,
+                    ) != sudo
+                    {
+                        sudo = !sudo;
+                        app.form.use_sudo = sudo;
+                    }
+                    if sudo {
+                        ui.add_space(space::XS);
+                        components::password_field(
+                            ui,
+                            p,
+                            t.field_sudo_password,
+                            &mut app.form.sudo_password,
+                        );
+                    }
+                    ui.add_space(space::S);
+                    let ready = {
+                        let f = &app.form;
+                        !f.host.trim().is_empty() && !f.user.trim().is_empty()
+                    };
+                    ui.horizontal(|ui| {
+                        let save_w = 110.0;
+                        ui.add_enabled(
+                            ready,
+                            egui::TextEdit::singleline(&mut app.form.save_name)
+                                .hint_text(t.save_profile_placeholder)
+                                .desired_width((ui.available_width() - save_w - 8.0).max(120.0))
+                                .margin(Margin::symmetric(10, 8)),
+                        );
+                        if components::styled_button_en(
+                            ui,
+                            p,
+                            t.save_profile_btn,
+                            components::BtnKind::Ghost,
+                            ready,
+                        )
+                        .clicked()
+                        {
+                            save_profile(app);
+                        }
+                    });
+                });
+        }
     });
 }
 
@@ -254,15 +435,6 @@ fn save_profile(app: &mut GuiApp) {
     app.form.profile_name = Some(saved_name);
     app.form.save_name.clear();
     app.toasts.success(t.profile_saved_toast.to_string());
-}
-
-fn primary_button(p: &crate::theme::Palette, t: &crate::i18n::Tr) -> egui::Button<'static> {
-    egui::Button::new(
-        RichText::new(t.connect_btn)
-            .color(egui::Color32::WHITE)
-            .family(egui::FontFamily::Name("Medium".into())),
-    )
-    .fill(p.accent)
 }
 
 fn connect_ssh(app: &mut GuiApp) {

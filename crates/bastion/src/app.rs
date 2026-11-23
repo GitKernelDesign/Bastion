@@ -101,6 +101,7 @@ pub enum ConfirmKind {
     StopUfw,
     RestartUfw,
     StopClamav { unit: String },
+    ClearJournal,
 }
 
 pub struct HostKeyCtx {
@@ -134,6 +135,8 @@ pub struct F2bUi {
     pub selected_jail: Option<String>,
     pub banned_all: Option<Vec<(String, Vec<String>)>>,
     pub ban_input: String,
+    /// Filtre de la liste des prisons.
+    pub jail_filter: String,
 }
 
 /// Données de l'écran Antivirus (ClamAV).
@@ -147,6 +150,8 @@ pub struct ClamUi {
     pub scan_path: String,
     /// Un sélecteur de dossier est ouvert (désactive les boutons concernés).
     pub picking: bool,
+    /// Dernier résultat d'analyse (fichiers infectés, horodatage).
+    pub last_scan: Option<(Vec<(String, String)>, Instant)>,
 }
 
 impl Default for ClamUi {
@@ -160,6 +165,7 @@ impl Default for ClamUi {
             db_at: None,
             scan_path: String::new(),
             picking: false,
+            last_scan: None,
         }
     }
 }
@@ -178,6 +184,8 @@ pub struct ConnectForm {
     pub use_sudo: bool,
     pub sudo_password: String,
     pub save_name: String,
+    /// Le panneau « Options de connexion » est-il déplié ?
+    pub show_options: bool,
 }
 
 impl Default for ConnectForm {
@@ -195,6 +203,7 @@ impl Default for ConnectForm {
             use_sudo: false,
             sudo_password: String::new(),
             save_name: String::new(),
+            show_options: false,
         }
     }
 }
@@ -256,15 +265,13 @@ impl AddRuleForm {
         if !bastion_core::ufw::is_valid_port_spec(port) {
             return Err(FormError::InvalidPort);
         }
-        if let Some(a) = self.from_addr.trim().strip_suffix("") {
-            if !a.is_empty() && !bastion_core::ufw::is_valid_addr(a) {
-                return Err(FormError::InvalidSource);
-            }
+        let from = self.from_addr.trim();
+        if !from.is_empty() && !bastion_core::ufw::is_valid_addr(from) {
+            return Err(FormError::InvalidSource);
         }
-        if let Some(a) = self.to_addr.trim().strip_suffix("") {
-            if !a.is_empty() && !bastion_core::ufw::is_valid_addr(a) {
-                return Err(FormError::InvalidDestination);
-            }
+        let to = self.to_addr.trim();
+        if !to.is_empty() && !bastion_core::ufw::is_valid_addr(to) {
+            return Err(FormError::InvalidDestination);
         }
         Ok(NewRule {
             action: self.action,
@@ -354,6 +361,10 @@ pub struct GuiApp {
     pub clam: ClamUi,
     pub form: ConnectForm,
     pub add_form: AddRuleForm,
+    /// Le composeur de règle est-il ouvert ?
+    pub add_form_open: bool,
+    /// Le champ « port » doit prendre le focus à la prochaine frame.
+    pub focus_port: bool,
     pub probe: (Option<String>, Option<String>),
     /// Logo Bastion (rasterisé, sans loader d'image externe).
     pub logo: egui::TextureHandle,
@@ -373,12 +384,22 @@ impl GuiApp {
     pub fn new(cc: &eframe::CreationContext) -> GuiApp {
         crate::fonts::install(&cc.egui_ctx);
         let cfg = AppConfig::load();
+        let worker = WorkerHandle::spawn();
+        let app = GuiApp::build(&cc.egui_ctx, cfg, worker);
+        app.worker.send(Job::ProbeLocalTools);
+        app
+    }
+
+    /// Construit l'état à partir d'un contexte egui et d'un worker déjà créés.
+    /// Séparé de [`GuiApp::new`] pour permettre le rendu hors écran
+    /// (`src/snapshots.rs`, tests uniquement).
+    pub(crate) fn build(ctx: &egui::Context, cfg: AppConfig, worker: WorkerHandle) -> GuiApp {
         let lang = cfg.language;
         let t = tr(lang);
-        crate::theme::apply(&cc.egui_ctx, cfg.theme, cfg.font_scale);
+        crate::theme::apply(ctx, cfg.theme, cfg.font_scale);
         let resolved_theme = crate::theme::resolve(cfg.theme);
         let last_cfg_theme = cfg.theme;
-        let logo = cc.egui_ctx.load_texture(
+        let logo = ctx.load_texture(
             "bastion-logo",
             egui::ColorImage::from_rgba_unmultiplied(
                 [64, 64],
@@ -386,8 +407,6 @@ impl GuiApp {
             ),
             egui::TextureOptions::LINEAR,
         );
-        let worker = WorkerHandle::spawn();
-        worker.send(Job::ProbeLocalTools);
 
         GuiApp {
             worker,
@@ -430,9 +449,12 @@ impl GuiApp {
                 selected_jail: None,
                 banned_all: None,
                 ban_input: String::new(),
+                jail_filter: String::new(),
             },
             form: ConnectForm::default(),
             add_form: AddRuleForm::default(),
+            add_form_open: false,
+            focus_port: false,
             probe: (None, None),
             status_msg: String::new(),
             last_error_toast: None,
@@ -516,6 +538,8 @@ impl GuiApp {
                 self.form.passphrase.clear();
                 self.form.sudo_password.clear();
                 self.modal = None;
+                self.add_form_open = false;
+                self.focus_port = false;
                 self.screen = Screen::Firewall;
                 self.toasts.success(self.tr.toast_connected.to_string());
                 self.refresh_all();
@@ -653,6 +677,8 @@ impl GuiApp {
                 self.send_op(Pending::RefreshStatus, Op::UfwStatus);
             }
             Pending::AddRule => {
+                self.add_form_open = false;
+                self.focus_port = false;
                 self.success(self.tr.toast_rule_added);
                 self.send_op(Pending::RefreshStatus, Op::UfwStatus);
                 self.send_op(Pending::RefreshRules, Op::UfwRules);
@@ -779,6 +805,7 @@ impl GuiApp {
             }
             Pending::ClamScan => {
                 if let OpResult::ClamScanResult(r) = res {
+                    self.clam.last_scan = Some((r.infected.clone(), Instant::now()));
                     if r.infected.is_empty() {
                         self.success(self.tr.clam_scan_clean_toast);
                     } else {
@@ -838,6 +865,14 @@ impl GuiApp {
 
 impl eframe::App for GuiApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.frame(ui);
+    }
+}
+
+impl GuiApp {
+    /// Corps d'une frame, indépendant d'eframe (partagé avec les captures
+    /// hors écran des tests).
+    pub(crate) fn frame(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
 
         for ev in self.worker.poll() {
@@ -883,7 +918,10 @@ impl eframe::App for GuiApp {
         if let Some(modal) = self.modal.take() {
             crate::modal::render(self, &ctx, &p, modal);
         }
-        let actions = self.toasts.show(&ctx, &p, self.tr);
+        let compact = crate::components::is_compact(ctx.input(|i| i.viewport_rect().width()));
+        let actions = self
+            .toasts
+            .show(&ctx, &p, self.tr, crate::ui::toast_inset(compact));
         for action in actions {
             match action {
                 ToastAction::Reban { jail, ip } => {
@@ -925,6 +963,7 @@ impl GuiApp {
                 egui::Key::Num3,
                 egui::Key::Num4,
                 egui::Key::Num5,
+                egui::Key::Num6,
             ]
             .iter()
             .position(|k| i.key_pressed(*k));
@@ -942,9 +981,12 @@ impl GuiApp {
             self.refresh_all();
         }
         if new_rule && self.phase == ConnPhase::Connected {
-            // Le formulaire d'ajout est inline dans l'écran Pare-feu.
+            // Ouvre le composeur de règle (écran Pare-feu) et place le focus
+            // sur le champ « port ».
             self.screen = Screen::Firewall;
             self.add_form = AddRuleForm::default();
+            self.add_form_open = true;
+            self.focus_port = true;
             if self.firewall.profiles.is_empty() {
                 self.send_op(Pending::RefreshProfiles, Op::UfwAppProfiles);
             }

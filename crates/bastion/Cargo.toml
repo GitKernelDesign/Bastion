@@ -18,3 +18,6 @@ async-trait = { workspace = true }
 [[bin]]
 name = "bastion"
 path = "src/main.rs"
+
+[dev-dependencies]
+png = "0.18"

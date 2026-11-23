@@ -1,12 +1,17 @@
-//! Composants d'interface : cartes, interrupteur, sélecteur segmenté,
-//! badges, boutons sémantiques. Tout ce qui donne à l'application son
-//! langage visuel sobre et cohérent (voir docs/ERGONOMIE.md).
+//! Composants d'interface : cartes, boutons, interrupteurs, sélecteurs,
+//! badges, bandeaux, tuiles de chiffres. Tout ce qui donne à l'application
+//! son langage visuel sobre et cohérent (voir docs/ERGONOMIE.md).
+//!
+//! Règles du langage :
+//!  - un bouton a toujours la même hauteur (34 px) et le même rayon ;
+//!  - un seul bouton plein par zone (l'action principale) ;
+//!  - les couleurs sémantiques ne colorent que les états, jamais la décoration.
 
 use crate::icons;
-use crate::theme::Palette;
+use crate::theme::{shape, space, text, Palette};
 use egui::{
-    Align, Color32, CornerRadius, FontId, Frame, Layout, Margin, RichText, Sense, Stroke,
-    StrokeKind, Ui,
+    Align, Color32, CornerRadius, FontId, Frame, Layout, Margin, Response, RichText, Sense,
+    Stroke, StrokeKind, Ui, Vec2,
 };
 
 /// Mélange une couleur vers un fond (k = part de la couleur).
@@ -17,6 +22,32 @@ pub fn blend(c: Color32, bg: Color32, k: f32) -> Color32 {
 
 const WHITE: Color32 = Color32::from_rgb(255, 255, 255);
 const BLACK: Color32 = Color32::from_rgb(0, 0, 0);
+
+/// Couleur de texte lisible sur un aplat (blanc ou encre), au choix le plus
+/// contrasté — indispensable pour les boutons pleins en thème sombre.
+fn readable_on(bg: Color32, p: &Palette) -> Color32 {
+    let lum = |c: Color32| {
+        let f = |v: u8| {
+            let v = v as f32 / 255.0;
+            if v <= 0.03928 {
+                v / 12.92
+            } else {
+                ((v + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * f(c.r()) + 0.7152 * f(c.g()) + 0.0722 * f(c.b())
+    };
+    let white = lum(WHITE);
+    let ink = lum(p.on_accent);
+    let bg_l = lum(bg);
+    let c_white = (white + 0.05) / (bg_l + 0.05);
+    let c_ink = (bg_l + 0.05) / (ink + 0.05);
+    if c_white >= c_ink {
+        WHITE
+    } else {
+        p.on_accent
+    }
+}
 
 /// Coupe proprement une chaîne (nombre de caractères) avec ellipse.
 /// Le texte intégral reste disponible via infobulle côté appelant.
@@ -39,24 +70,26 @@ fn soft_shadow(alpha: u8) -> egui::Shadow {
     }
 }
 
-// ─── Boutons (esprit uikit : états survol/appui, ombre discrète) ─────────────
+// ─── Boutons ─────────────────────────────────────────────────────────────────
 
 /// Variantes visuelles de bouton.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum BtnKind {
-    /// Action principale (accent plein).
+    /// Action principale (aplat d'accent).
     Primary,
-    /// Action destructive (danger plein).
+    /// Action destructive (aplat danger).
     Danger,
     /// Action secondaire (contour discret).
     Ghost,
     /// Action tertiaire (fond doux, sans contour).
     Soft,
+    /// Action discrète (texte seul, sans fond).
+    Quiet,
 }
 
-/// Bouton dessiné sur mesure : états survol/appui, ombre portée discrète,
-/// rayon homogène. Sobre : aucune couleur hors sémantique.
-pub fn styled_button(ui: &mut Ui, p: &Palette, label: &str, kind: BtnKind) -> egui::Response {
+/// Bouton dessiné sur mesure : états survol/appui, anneau de focus clavier,
+/// rayon et hauteur homogènes.
+pub fn styled_button(ui: &mut Ui, p: &Palette, label: &str, kind: BtnKind) -> Response {
     styled_button_opts(ui, p, label, kind, ui.is_enabled(), 0.0)
 }
 
@@ -68,293 +101,8 @@ pub fn styled_button_minw(
     kind: BtnKind,
     enabled: bool,
     min_width: f32,
-) -> egui::Response {
+) -> Response {
     styled_button_opts(ui, p, label, kind, enabled, min_width)
-}
-
-fn styled_button_opts(
-    ui: &mut Ui,
-    p: &Palette,
-    label: &str,
-    kind: BtnKind,
-    enabled: bool,
-    min_width: f32,
-) -> egui::Response {
-    let text_color = match kind {
-        BtnKind::Primary | BtnKind::Danger => WHITE,
-        _ => p.text,
-    };
-    let font = FontId::new(14.0, egui::FontFamily::Name("Medium".into()));
-    let galley = ui.painter().layout_no_wrap(
-        label.to_owned(),
-        font,
-        if enabled { text_color } else { p.text_secondary },
-    );
-    let pad = egui::vec2(16.0, 9.0);
-    let mut size = galley.size() + 2.0 * pad;
-    size.x = size.x.max(min_width);
-    let sense = if enabled { Sense::click() } else { Sense::hover() };
-    let (rect, resp) = ui.allocate_exact_size(size, sense);
-    resp.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::Role::Button, enabled, label)
-    });
-
-    let hovered = enabled && resp.hovered();
-    let pressed = enabled && resp.is_pointer_button_down_on();
-    let base_fill = match kind {
-        BtnKind::Primary => p.accent,
-        BtnKind::Danger => p.danger,
-        BtnKind::Ghost => Color32::TRANSPARENT,
-        BtnKind::Soft => p.card_hover,
-    };
-    // Au survol, le fond s'assombrit au lieu de s'éclaircir : plus lisible
-    // sur les cartes claires (le fond de repos des boutons doux frôle déjà
-    // celui de la carte) et cohérent avec l'état appuyé, lui aussi assombri.
-    // Ratios renforcés en thème sombre, où le fond de repos est très proche
-    // de la carte.
-    let hover_k = if p.dark { 0.35 } else { 0.10 };
-    let press_k = if p.dark { 0.45 } else { 0.18 };
-    let (fill, stroke) = match kind {
-        BtnKind::Ghost => (
-            if pressed {
-                blend(p.card_hover, BLACK, press_k)
-            } else if hovered {
-                blend(p.card_hover, BLACK, hover_k)
-            } else {
-                Color32::TRANSPARENT
-            },
-            Stroke::new(1.0, if hovered { p.accent } else { p.border }),
-        ),
-        _ => {
-            let fill = if pressed {
-                blend(base_fill, BLACK, press_k)
-            } else if hovered {
-                blend(base_fill, BLACK, hover_k)
-            } else {
-                base_fill
-            };
-            (fill, Stroke::NONE)
-        }
-    };
-    let radius = CornerRadius::same(10);
-
-    // Ombre portée douce sous les boutons pleins au survol.
-    if hovered && !matches!(kind, BtnKind::Ghost) {
-        let alpha = if p.dark { 70 } else { 45 };
-        let below = rect.translate(egui::vec2(0.0, 2.0));
-        ui.painter().add(
-            egui::epaint::RectShape::filled(below, radius, Color32::from_black_alpha(alpha))
-                .with_blur_width(6.0),
-        );
-    }
-    ui.painter().rect(rect, radius, fill, stroke, StrokeKind::Inside);
-    // Reflet très discret sur la moitié supérieure des boutons pleins.
-    if !matches!(kind, BtnKind::Ghost | BtnKind::Soft) {
-        let sheen = egui::Rect::from_min_size(
-            rect.left_top(),
-            egui::vec2(rect.width(), (rect.height() * 0.5).max(1.0)),
-        );
-        let top = egui::CornerRadius { nw: 10, ne: 10, sw: 0, se: 0 };
-        ui.painter().rect(
-            sheen,
-            top,
-            Color32::from_white_alpha(if p.dark { 12 } else { 16 }),
-            Stroke::NONE,
-            StrokeKind::Inside,
-        );
-    }
-    let tp = rect.center() - galley.size() * 0.5;
-    ui.painter().galley(tp, galley, text_color);
-    resp
-}
-
-/// Carte avec en-tête (titre majuscules espacées + actions à droite).
-pub fn card<R>(
-    ui: &mut Ui,
-    p: &Palette,
-    title: &str,
-    actions: impl FnOnce(&mut Ui),
-    body: impl FnOnce(&mut Ui) -> R,
-) -> R {
-    card_frame(ui, p, |ui| {
-        ui.set_min_width(ui.available_width() - 2.0);
-        ui.add_space(2.0);
-        ui.horizontal(|ui| {
-            ui.label(
-                RichText::new(title.to_uppercase())
-                    .size(11.5)
-                    .weak()
-                    .family(egui::FontFamily::Name("Medium".into())),
-            );
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.style_mut().spacing.item_spacing = egui::vec2(6.0, 6.0);
-                actions(ui);
-            });
-        });
-        ui.add_space(6.0);
-        body(ui)
-    })
-}
-
-/// Cadre de carte : fond, bordure, rayon et ombre discrète.
-fn card_frame<R>(ui: &mut Ui, p: &Palette, body: impl FnOnce(&mut Ui) -> R) -> R {
-    Frame::NONE
-        .fill(p.card)
-        .stroke(egui::Stroke::new(1.0, p.border))
-        .corner_radius(CornerRadius::same(14))
-        .inner_margin(Margin::same(16))
-        .shadow(soft_shadow(if p.dark { 55 } else { 20 }))
-        .show(ui, body)
-        .inner
-}
-
-/// Carte sans en-tête, occupant la largeur disponible.
-pub fn card_body<R>(ui: &mut Ui, p: &Palette, body: impl FnOnce(&mut Ui) -> R) -> R {
-    card_frame(ui, p, |ui| {
-        ui.set_min_width(ui.available_width() - 2.0);
-        body(ui)
-    })
-}
-
-/// Interrupteur à bascule (52×28 px, animé, anneau au survol).
-pub fn switch(ui: &mut Ui, p: &Palette, on: bool, accent: Option<Color32>) -> bool {
-    let id = ui.scope_id().with("switch");
-    let animated = ui.ctx().animate_bool(id, on);
-    let size = egui::vec2(52.0, 28.0);
-    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
-    resp.widget_info(|| {
-        egui::WidgetInfo::selected(egui::Role::CheckBox, ui.is_enabled(), on, "")
-    });
-    let track = CornerRadius::same(14);
-    let bg = if on {
-        accent.unwrap_or(p.success)
-    } else {
-        p.card_hover
-    };
-    ui.painter().rect_filled(rect, track, bg);
-    // Position du bouton : 2 px de marge.
-    let travel = rect.width() - 28.0;
-    let x = rect.left() + 2.0 + animated * travel;
-    let knob = egui::Rect::from_min_size(
-        egui::pos2(x, rect.center().y - 11.0),
-        egui::vec2(22.0, 22.0),
-    );
-    // Anneau de survol + ombre du curseur.
-    if resp.hovered() {
-        ui.painter().circle_filled(
-            knob.center(),
-            13.0,
-            Color32::from_black_alpha(if p.dark { 60 } else { 30 }),
-        );
-    }
-    ui.painter().add(
-        egui::epaint::RectShape::filled(knob.translate(egui::vec2(0.0, 1.0)), CornerRadius::same(11), Color32::from_black_alpha(if p.dark { 80 } else { 45 }))
-            .with_blur_width(4.0),
-    );
-    ui.painter().circle_filled(knob.center(), 11.0, Color32::WHITE);
-    if resp.clicked() {
-        !on
-    } else {
-        on
-    }
-}
-
-/// Sélecteur segmenté en pastille (segment actif : accent + ombre douce).
-/// Retourne vrai si la valeur a changé.
-pub fn segmented<T: PartialEq + Copy>(
-    ui: &mut Ui,
-    p: &Palette,
-    variants: &[(T, &str)],
-    value: &mut T,
-) -> bool {
-    let mut changed = false;
-    Frame::NONE
-        .fill(p.row_alt)
-        .corner_radius(CornerRadius::same(11))
-        .inner_margin(Margin::same(3))
-        .show(ui, |ui| {
-            ui.spacing_mut().item_spacing = egui::vec2(2.0, 0.0);
-            for (v, label) in variants {
-                let selected = *value == *v;
-                let text_col = if selected { WHITE } else { p.text_secondary };
-                let font = FontId::new(12.5, egui::FontFamily::Name("Medium".into()));
-                let galley = ui.painter().layout_no_wrap(label.to_string(), font, text_col);
-                let w = galley.size().x + 22.0;
-                let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 26.0), Sense::click());
-                resp.widget_info(|| {
-                    egui::WidgetInfo::selected(egui::Role::Button, true, selected, label)
-                });
-                if selected {
-                    let below = rect.translate(egui::vec2(0.0, 1.0));
-                    ui.painter().add(
-                        egui::epaint::RectShape::filled(
-                            below,
-                            CornerRadius::same(9),
-                            Color32::from_black_alpha(if p.dark { 55 } else { 28 }),
-                        )
-                        .with_blur_width(4.0),
-                    );
-                }
-                let fill = if selected {
-                    p.accent
-                } else if resp.hovered() {
-                    p.card_hover
-                } else {
-                    Color32::TRANSPARENT
-                };
-                ui.painter().rect(rect, CornerRadius::same(9), fill, Stroke::NONE, StrokeKind::Inside);
-                ui.painter().galley(rect.center() - galley.size() * 0.5, galley, text_col);
-                if resp.clicked() && !selected {
-                    *value = *v;
-                    changed = true;
-                }
-            }
-        })
-        .inner;
-    changed
-}
-
-/// Badge coloré (état, action…).
-pub fn badge(ui: &mut Ui, _p: &Palette, text: &str, fg: Color32, bg: Color32) {
-    Frame::NONE
-        .fill(bg)
-        .corner_radius(CornerRadius::same(6))
-        .inner_margin(Margin{ left: 8, right: 8, top: 3, bottom: 3 })
-        .show(ui, |ui| {
-            ui.label(
-                RichText::new(text)
-                    .size(11.5)
-                    .color(fg)
-                    .family(egui::FontFamily::Name("Medium".into())),
-            );
-        });
-}
-
-/// Badge d'action sémantique (Autoriser / Bloquer / Rejeter / Limiter).
-pub fn action_badge(ui: &mut Ui, p: &Palette, text: &str, color: Color32) {
-    let bg = blend(color, ui.style().visuals.panel_fill, 0.18);
-    badge(ui, p, text, color, bg);
-}
-
-/// Point d'état + libellé.
-pub fn status_line(ui: &mut Ui, p: &Palette, color: Color32, label: &str, sub: Option<&str>) {
-    ui.horizontal(|ui| {
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(12.0, 12.0), Sense::hover());
-        ui.painter().circle_filled(rect.center(), 5.0, color);
-        ui.label(
-            RichText::new(label)
-                .size(16.0)
-                .family(egui::FontFamily::Name("SemiBold".into())),
-        );
-        if let Some(s) = sub {
-            ui.label(RichText::new(s).size(12.5).color(p.text_secondary));
-        }
-    });
-}
-
-/// Bouton principal (accent plein).
-pub fn primary_button(ui: &mut Ui, p: &Palette, label: &str) -> egui::Response {
-    styled_button(ui, p, label, BtnKind::Primary)
 }
 
 /// Bouton stylé avec état activé/désactivé explicite (grisé si désactivé).
@@ -364,160 +112,793 @@ pub fn styled_button_en(
     label: &str,
     kind: BtnKind,
     enabled: bool,
-) -> egui::Response {
+) -> Response {
     styled_button_opts(ui, p, label, kind, enabled, 0.0)
 }
 
-/// Petit bouton principal avec icône (« + Ajouter »).
-pub fn primary_button_small(ui: &mut Ui, p: &Palette, icon: &str, label: &str) -> egui::Response {
-    styled_button(ui, p, &format!("{}  {}", icon, label), BtnKind::Primary)
+/// Bouton pleine largeur (formulaires, bandeaux).
+pub fn styled_button_fill(
+    ui: &mut Ui,
+    p: &Palette,
+    label: &str,
+    kind: BtnKind,
+    enabled: bool,
+) -> Response {
+    let w = ui.available_width();
+    styled_button_opts(ui, p, label, kind, enabled, w)
+}
+
+fn styled_button_opts(
+    ui: &mut Ui,
+    p: &Palette,
+    label: &str,
+    kind: BtnKind,
+    enabled: bool,
+    min_width: f32,
+) -> Response {
+    let fg = if enabled {
+        match kind {
+            BtnKind::Primary => readable_on(p.accent, p),
+            BtnKind::Danger => readable_on(p.danger, p),
+            BtnKind::Ghost | BtnKind::Soft => p.text,
+            BtnKind::Quiet => p.text_secondary,
+        }
+    } else {
+        blend(p.text_secondary, p.card, 0.35)
+    };
+    let font = FontId::new(text::LABEL, egui::FontFamily::Name("Medium".into()));
+    let galley = ui.painter().layout_no_wrap(label.to_owned(), font, fg);
+    let pad_x = 14.0;
+    let mut size = Vec2::new(galley.size().x + 2.0 * pad_x, shape::BTN_H);
+    size.x = size.x.max(min_width);
+    let sense = if enabled { Sense::click() } else { Sense::hover() };
+    let (rect, resp) = ui.allocate_exact_size(size, sense);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, label));
+
+    let hovered = enabled && resp.hovered();
+    let pressed = enabled && resp.is_pointer_button_down_on();
+    let (base, hover, press) = match kind {
+        BtnKind::Primary => (p.accent, p.accent_hover, blend(p.accent_hover, BLACK, 0.12)),
+        BtnKind::Danger => (p.danger, blend(p.danger, BLACK, 0.12), blend(p.danger, BLACK, 0.22)),
+        BtnKind::Ghost => (Color32::TRANSPARENT, p.card_hover, blend(p.card_hover, BLACK, 0.08)),
+        BtnKind::Soft => (p.card_hover, blend(p.card_hover, p.border_strong, 0.45), blend(p.card_hover, p.border_strong, 0.7)),
+        BtnKind::Quiet => (Color32::TRANSPARENT, p.card_hover, blend(p.card_hover, BLACK, 0.08)),
+    };
+    let fill = if !enabled {
+        // Un bouton principal inactif ne doit pas ressembler à une barre de
+        // progression : fond neutre, contour discret, texte atténué.
+        match kind {
+            BtnKind::Primary | BtnKind::Danger => blend(p.card_hover, p.card, 0.35),
+            _ => Color32::TRANSPARENT,
+        }
+    } else if pressed {
+        press
+    } else if hovered {
+        hover
+    } else {
+        base
+    };
+    let stroke = match kind {
+        BtnKind::Ghost => Stroke::new(1.0, if hovered { p.border_strong } else { p.border }),
+        BtnKind::Primary | BtnKind::Danger if !enabled => Stroke::new(1.0, p.border),
+        BtnKind::Primary | BtnKind::Danger => Stroke::NONE,
+        _ => Stroke::NONE,
+    };
+    let radius = CornerRadius::same(shape::R_BUTTON);
+    ui.painter().rect(rect, radius, fill, stroke, StrokeKind::Inside);
+    // Anneau de focus clavier (l'activation Entrée/Espace est gérée par egui
+    // pour tout widget cliquable).
+    if resp.has_focus() {
+        ui.painter().rect_stroke(
+            rect.expand(2.0),
+            CornerRadius::same(shape::R_BUTTON + 2),
+            Stroke::new(2.0, p.accent),
+            StrokeKind::Outside,
+        );
+    }
+    let tp = rect.center() - galley.size() * 0.5;
+    ui.painter().galley(tp, galley, fg);
+    resp
+}
+
+/// Bouton principal (accent plein).
+pub fn primary_button(ui: &mut Ui, p: &Palette, label: &str) -> Response {
+    styled_button(ui, p, label, BtnKind::Primary)
 }
 
 /// Bouton destructif (danger plein).
-pub fn danger_button(ui: &mut Ui, p: &Palette, label: &str) -> egui::Response {
+pub fn danger_button(ui: &mut Ui, p: &Palette, label: &str) -> Response {
     styled_button(ui, p, label, BtnKind::Danger)
 }
 
 /// Bouton secondaire (contour discret).
-pub fn ghost_button(ui: &mut Ui, p: &Palette, label: &str) -> egui::Response {
+pub fn ghost_button(ui: &mut Ui, p: &Palette, label: &str) -> Response {
     styled_button(ui, p, label, BtnKind::Ghost)
 }
 
+/// Bouton tertiaire (fond doux).
+pub fn soft_button(ui: &mut Ui, p: &Palette, label: &str) -> Response {
+    styled_button(ui, p, label, BtnKind::Soft)
+}
+
 /// Bouton icône discret, libellé en infobulle.
-pub fn icon_button(ui: &mut Ui, p: &Palette, icon: &str, tooltip: &str) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(30.0, 30.0), Sense::click());
+pub fn icon_button(ui: &mut Ui, p: &Palette, icon: &str, tooltip: &str) -> Response {
+    icon_button_sz(ui, p, icon, tooltip, 30.0, 16.0)
+}
+
+/// Bouton icône de taille choisie (les lignes de tableau utilisent 26 px).
+pub fn icon_button_sz(
+    ui: &mut Ui,
+    p: &Palette,
+    icon: &str,
+    tooltip: &str,
+    side: f32,
+    glyph: f32,
+) -> Response {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(side), Sense::click());
     let hovered = resp.hovered();
     let pressed = resp.is_pointer_button_down_on();
     let fill = if pressed {
-        blend(p.card_hover, p.border, 0.35)
+        blend(p.card_hover, p.border, 0.4)
     } else if hovered {
         p.card_hover
     } else {
         Color32::TRANSPARENT
     };
-    ui.painter().rect(rect, CornerRadius::same(8), fill, Stroke::NONE, StrokeKind::Inside);
+    ui.painter().rect(
+        rect,
+        CornerRadius::same(shape::R_BUTTON),
+        fill,
+        Stroke::NONE,
+        StrokeKind::Inside,
+    );
     let col = if hovered { p.text } else { p.text_secondary };
-    let font = FontId::new(17.0, egui::FontFamily::Name("Icon".into()));
+    let font = FontId::new(glyph, egui::FontFamily::Name("Icon".into()));
     let galley = ui.painter().layout_no_wrap(icon.to_string(), font, col);
     ui.painter().galley(rect.center() - galley.size() * 0.5, galley, col);
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, tooltip));
     resp.on_hover_text(tooltip)
 }
 
-/// Texte riche combinant icône et libellé (pour boutons).
-/// L'icône est résolue par repli de police (Material Icons en fin de liste) ;
-/// le libellé utilise la police texte.
-pub fn btn_icon_text(icon: &str, label: &str) -> RichText {
-    RichText::new(format!("{}  {}", icon, label))
-        .family(egui::FontFamily::Name("Medium".into()))
+/// Petit bouton icône destructif (suppression dans une ligne).
+pub fn icon_danger_button(ui: &mut Ui, p: &Palette, icon: &str, tooltip: &str) -> Response {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(26.0), Sense::click());
+    let hovered = resp.hovered();
+    if hovered {
+        ui.painter().rect(
+            rect,
+            CornerRadius::same(shape::R_BUTTON),
+            p.soft(p.danger),
+            Stroke::NONE,
+            StrokeKind::Inside,
+        );
+    }
+    let col = if hovered { p.danger } else { p.text_secondary };
+    let font = FontId::new(15.0, egui::FontFamily::Name("Icon".into()));
+    let galley = ui.painter().layout_no_wrap(icon.to_string(), font, col);
+    ui.painter().galley(rect.center() - galley.size() * 0.5, galley, col);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, tooltip));
+    resp.on_hover_text(tooltip)
 }
 
-/// Libellé de champ + saisie monoligne.
-pub fn field(ui: &mut Ui, p: &Palette, label: &str, value: &mut String, hint: &str) {
-    ui.vertical(|ui| {
+// ─── Cartes ──────────────────────────────────────────────────────────────────
+
+/// Carte avec en-tête (titre + actions à droite).
+pub fn card<R>(
+    ui: &mut Ui,
+    p: &Palette,
+    title: &str,
+    actions: impl FnOnce(&mut Ui),
+    body: impl FnOnce(&mut Ui) -> R,
+) -> R {
+    card_frame(ui, p, |ui| {
+        ui.set_width(ui.available_width());
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new(title)
+                    .size(text::TITLE)
+                    .color(p.text)
+                    .family(egui::FontFamily::Name("SemiBold".into())),
+            );
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.style_mut().spacing.item_spacing = Vec2::new(6.0, 6.0);
+                actions(ui);
+            });
+        });
+        ui.add_space(space::M);
+        body(ui)
+    })
+}
+
+/// Cadre de carte : fond, bordure, rayon. Plat, sans ombre superflue.
+fn card_frame<R>(ui: &mut Ui, p: &Palette, body: impl FnOnce(&mut Ui) -> R) -> R {
+    Frame::NONE
+        .fill(p.card)
+        .stroke(Stroke::new(1.0, p.border))
+        .corner_radius(CornerRadius::same(shape::R_CARD))
+        .inner_margin(Margin::same(16))
+        .show(ui, body)
+        .inner
+}
+
+/// Carte sans en-tête, occupant la largeur disponible.
+pub fn card_body<R>(ui: &mut Ui, p: &Palette, body: impl FnOnce(&mut Ui) -> R) -> R {
+    card_frame(ui, p, |ui| {
+        ui.set_width(ui.available_width());
+        body(ui)
+    })
+}
+
+/// Sous-titre de section à l'intérieur d'une carte.
+pub fn section(ui: &mut Ui, p: &Palette, label: &str) {
+    ui.label(
+        RichText::new(label.to_uppercase())
+            .size(text::MICRO)
+            .color(p.text_secondary)
+            .family(egui::FontFamily::Name("Medium".into())),
+    );
+}
+
+/// Filet horizontal discret.
+pub fn hairline(ui: &mut Ui, p: &Palette) {
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 1.0), Sense::hover());
+    ui.painter().rect_filled(rect, CornerRadius::ZERO, p.border);
+}
+
+// ─── Contrôles ───────────────────────────────────────────────────────────────
+
+/// Interrupteur avec état activé/désactivé.
+pub fn switch_enabled(
+    ui: &mut Ui,
+    p: &Palette,
+    on: bool,
+    accent: Option<Color32>,
+    enabled: bool,
+) -> bool {
+    let size = Vec2::new(46.0, 26.0);
+    let sense = if enabled { Sense::click() } else { Sense::hover() };
+    let (rect, resp) = ui.allocate_exact_size(size, sense);
+    // L'identifiant du widget (unique, stable d'une image à l'autre) porte
+    // l'animation : `scope_id` est partagé par tous les sous-Ui voisins.
+    let animated = ui.ctx().animate_bool(resp.id, on);
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, enabled, on, ""));
+    let track = CornerRadius::same(13);
+    let base = accent.unwrap_or(p.success);
+    let bg = if !enabled {
+        blend(p.card_hover, p.card, 0.4)
+    } else if on {
+        base
+    } else {
+        blend(p.card_hover, p.border_strong, 0.35)
+    };
+    ui.painter().rect_filled(rect, track, bg);
+    let travel = rect.width() - 26.0;
+    let x = rect.left() + 2.0 + animated * travel;
+    let knob = egui::Rect::from_min_size(
+        egui::pos2(x, rect.center().y - 11.0),
+        Vec2::splat(22.0),
+    );
+    if resp.hovered() && enabled {
+        ui.painter().circle_filled(
+            knob.center(),
+            13.0,
+            Color32::from_black_alpha(if p.dark { 70 } else { 26 }),
+        );
+    }
+    ui.painter().circle_filled(knob.center(), 11.0, Color32::WHITE);
+    if resp.has_focus() {
+        ui.painter().rect_stroke(
+            rect.expand(2.0),
+            CornerRadius::same(15),
+            Stroke::new(2.0, p.accent),
+            StrokeKind::Outside,
+        );
+    }
+    if resp.clicked() && enabled {
+        !on
+    } else {
+        on
+    }
+}
+
+/// Ligne « interrupteur + libellé + description ».
+pub fn switch_row(
+    ui: &mut Ui,
+    p: &Palette,
+    on: bool,
+    enabled: bool,
+    label: &str,
+    desc: &str,
+) -> bool {
+    let mut value = on;
+    ui.horizontal(|ui| {
+        let w = ui.available_width();
+        let switch_w = 54.0;
+        ui.allocate_ui_with_layout(
+            Vec2::new((w - switch_w).max(120.0), 0.0),
+            Layout::top_down(Align::Min),
+            |ui| {
+                ui.label(
+                    RichText::new(label)
+                        .size(text::LABEL)
+                        .color(p.text)
+                        .family(egui::FontFamily::Name("Medium".into())),
+                );
+                if !desc.is_empty() {
+                    ui.label(RichText::new(desc).size(text::SMALL).color(p.text_secondary));
+                }
+            },
+        );
+        ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
+            value = switch_enabled(ui, p, on, None, enabled);
+        });
+    });
+    value
+}
+
+/// Sélecteur segmenté en pastille. Retourne vrai si la valeur a changé.
+pub fn segmented<T: PartialEq + Copy>(
+    ui: &mut Ui,
+    p: &Palette,
+    variants: &[(T, &str)],
+    value: &mut T,
+) -> bool {
+    segmented_opts(ui, p, variants, value, false)
+}
+
+/// Sélecteur segmenté réparti sur toute la largeur (formulaires).
+pub fn segmented_fill<T: PartialEq + Copy>(
+    ui: &mut Ui,
+    p: &Palette,
+    variants: &[(T, &str)],
+    value: &mut T,
+) -> bool {
+    segmented_opts(ui, p, variants, value, true)
+}
+
+fn segmented_opts<T: PartialEq + Copy>(
+    ui: &mut Ui,
+    p: &Palette,
+    variants: &[(T, &str)],
+    value: &mut T,
+    expand: bool,
+) -> bool {
+    let mut changed = false;
+    let n = variants.len().max(1) as f32;
+    let inner_w = (ui.available_width() - 6.0).max(40.0);
+    let seg_w = ((inner_w - 3.0 * (n - 1.0)) / n).max(28.0);
+    Frame::NONE
+        .fill(p.field)
+        .stroke(Stroke::new(1.0, p.border))
+        .corner_radius(CornerRadius::same(10))
+        .inner_margin(Margin::same(3))
+        .show(ui, |ui| {
+            // Toujours en ligne : l'appelant peut être dans une disposition
+            // verticale (formulaires) sans empiler les segments.
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing = Vec2::new(3.0, 0.0);
+                for (v, label) in variants {
+                    let selected = *value == *v;
+                    let fg = if selected {
+                        readable_on(p.accent, p)
+                    } else {
+                        p.text_secondary
+                    };
+                    let font = FontId::new(text::LABEL, egui::FontFamily::Name("Medium".into()));
+                    let galley = ui.painter().layout_no_wrap(label.to_string(), font, fg);
+                    let w = if expand {
+                        seg_w
+                    } else {
+                        (galley.size().x + 22.0).max(44.0)
+                    };
+                    let (rect, resp) =
+                        ui.allocate_exact_size(Vec2::new(w, 26.0), Sense::click());
+                    resp.widget_info(|| {
+                        egui::WidgetInfo::selected(egui::Role::Button, true, selected, label)
+                    });
+                    if selected {
+                        ui.painter()
+                            .rect_filled(rect, CornerRadius::same(8), p.accent);
+                    } else if resp.hovered() {
+                        ui.painter()
+                            .rect_filled(rect, CornerRadius::same(8), p.card_hover);
+                    }
+                    if resp.has_focus() {
+                        ui.painter().rect_stroke(
+                            rect,
+                            CornerRadius::same(8),
+                            Stroke::new(2.0, p.accent),
+                            StrokeKind::Inside,
+                        );
+                    }
+                    ui.painter()
+                        .galley(rect.center() - galley.size() * 0.5, galley, fg);
+                    if resp.clicked() && !selected {
+                        *value = *v;
+                        changed = true;
+                    }
+                }
+            });
+        });
+    changed
+}
+
+// ─── Badges, puces, indicateurs ──────────────────────────────────────────────
+
+/// Badge coloré (état, action…).
+pub fn badge(ui: &mut Ui, _p: &Palette, text: &str, fg: Color32, bg: Color32) {
+    Frame::NONE
+        .fill(bg)
+        .corner_radius(CornerRadius::same(6))
+        .inner_margin(Margin::symmetric(8, 3))
+        .show(ui, |ui| {
+            ui.label(
+                RichText::new(text)
+                    .size(text::MICRO)
+                    .color(fg)
+                    .family(egui::FontFamily::Name("Medium".into())),
+            );
+        });
+}
+
+/// Badge d'état : fond doux dérivé de la teinte, texte contrasté.
+pub fn tag(ui: &mut Ui, p: &Palette, text: &str, tone: Color32) {
+    badge(ui, p, text, tone, p.soft(tone));
+}
+
+/// Badge d'action sémantique (Autoriser / Bloquer / Rejeter / Limiter).
+pub fn action_badge(ui: &mut Ui, p: &Palette, text: &str, color: Color32) {
+    badge(ui, p, text, color, p.soft(color));
+}
+
+/// Point d'état coloré.
+pub fn status_dot(ui: &mut Ui, color: Color32, size: f32) {
+    let (rect, _) = ui.allocate_exact_size(Vec2::splat(size + 6.0), Sense::hover());
+    ui.painter().circle_filled(rect.center(), size * 0.5, color);
+}
+
+/// Point d'état + libellé (+ précision secondaire).
+pub fn status_line(ui: &mut Ui, p: &Palette, color: Color32, label: &str, sub: Option<&str>) {
+    ui.horizontal(|ui| {
+        status_dot(ui, color, 9.0);
         ui.label(
             RichText::new(label)
-                .size(12.5)
-                .color(p.text_secondary)
-                .family(egui::FontFamily::Name("Medium".into())),
+                .size(text::BODY + 2.0)
+                .color(p.text)
+                .family(egui::FontFamily::Name("SemiBold".into())),
         );
-        let edit = egui::TextEdit::singleline(value).desired_width(ui.available_width());
-        let resp = ui.add(edit);
-        if !hint.is_empty() {
-            resp.on_hover_text(hint);
+        if let Some(s) = sub {
+            ui.label(RichText::new(s).size(text::SMALL).color(p.text_secondary));
         }
     });
 }
 
-/// Champ mot de passe.
-pub fn password_field(ui: &mut Ui, p: &Palette, label: &str, value: &mut String) {
-    ui.vertical(|ui| {
-        ui.label(
-            RichText::new(label)
-                .size(12.5)
-                .color(p.text_secondary)
-                .family(egui::FontFamily::Name("Medium".into())),
-        );
-        ui.add(
-            egui::TextEdit::singleline(value)
-                .password(true)
-                .desired_width(ui.available_width()),
-        );
+/// Puces de filtre / de sélection rapide.
+pub fn chip(ui: &mut Ui, p: &Palette, label: &str, selected: bool) -> Response {
+    let fg = if selected {
+        readable_on(p.accent, p)
+    } else {
+        p.text_secondary
+    };
+    let font = FontId::new(text::LABEL, egui::FontFamily::Name("Medium".into()));
+    let galley = ui.painter().layout_no_wrap(label.to_string(), font, fg);
+    let (rect, resp) =
+        ui.allocate_exact_size(Vec2::new(galley.size().x + 24.0, 28.0), Sense::click());
+    resp.widget_info(|| {
+        egui::WidgetInfo::selected(egui::Role::Button, true, selected, label)
     });
+    let fill = if selected {
+        p.accent
+    } else if resp.hovered() {
+        p.card_hover
+    } else {
+        Color32::TRANSPARENT
+    };
+    ui.painter().rect(
+        rect,
+        CornerRadius::same(14),
+        fill,
+        Stroke::new(1.0, if selected { p.accent } else { p.border }),
+        StrokeKind::Inside,
+    );
+    ui.painter()
+        .galley(rect.center() - galley.size() * 0.5, galley, fg);
+    resp
 }
 
-/// Aide contextuelle (texte secondaire, 12,5 px).
+/// Tuile de chiffre clé : icône teintée, valeur, libellé.
+pub fn stat_tile(
+    ui: &mut Ui,
+    p: &Palette,
+    icon: &str,
+    tone: Color32,
+    value: &str,
+    label: &str,
+) {
+    Frame::NONE
+        .fill(p.card)
+        .stroke(Stroke::new(1.0, p.border))
+        .corner_radius(CornerRadius::same(shape::R_CARD))
+        .inner_margin(Margin::same(14))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                let (rect, _) = ui.allocate_exact_size(Vec2::splat(36.0), Sense::hover());
+                ui.painter().rect_filled(rect, CornerRadius::same(10), p.soft(tone));
+                let galley = ui.painter().layout_no_wrap(
+                    icon.to_string(),
+                    FontId::new(19.0, egui::FontFamily::Name("Icon".into())),
+                    tone,
+                );
+                ui.painter()
+                    .galley(rect.center() - galley.size() * 0.5, galley, tone);
+                ui.add_space(2.0);
+                ui.vertical(|ui| {
+                    ui.label(
+                        RichText::new(value)
+                            .size(22.0)
+                            .color(p.text)
+                            .family(egui::FontFamily::Name("SemiBold".into())),
+                    );
+                    ui.label(RichText::new(label).size(text::MICRO).color(p.text_secondary));
+                });
+            });
+        });
+}
+
+/// Bandeau d'alerte / d'information avec action optionnelle.
+pub fn banner<R>(
+    ui: &mut Ui,
+    p: &Palette,
+    tone: Color32,
+    icon: &str,
+    title: &str,
+    body: &str,
+    action: impl FnOnce(&mut Ui) -> R,
+) {
+    Frame::NONE
+        .fill(p.soft(tone))
+        .stroke(Stroke::new(1.0, blend(tone, p.card, 0.45)))
+        .corner_radius(CornerRadius::same(11))
+        .inner_margin(Margin::same(14))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                ui.label(icons::icon_sz(icon, 18.0, tone));
+                ui.vertical(|ui| {
+                    ui.label(
+                        RichText::new(title)
+                            .size(text::LABEL)
+                            .color(p.text)
+                            .family(egui::FontFamily::Name("SemiBold".into())),
+                    );
+                    if !body.is_empty() {
+                        ui.label(RichText::new(body).size(text::SMALL).color(p.text_secondary));
+                    }
+                });
+            });
+            action(ui);
+        });
+}
+
+// ─── Formulaires ─────────────────────────────────────────────────────────────
+
+/// Libellé de champ.
+fn field_label(ui: &mut Ui, p: &Palette, label: &str) {
+    ui.label(
+        RichText::new(label)
+            .size(text::SMALL)
+            .color(p.text_secondary)
+            .family(egui::FontFamily::Name("Medium".into())),
+    );
+}
+
+/// Libellé de champ + saisie monoligne.
+pub fn field(ui: &mut Ui, p: &Palette, label: &str, value: &mut String, hint: &str) -> Response {
+    let w = ui.available_width();
+    field_sized(ui, p, label, value, hint, w)
+}
+
+/// Champ de largeur imposée (lignes à plusieurs champs).
+pub fn field_sized(
+    ui: &mut Ui,
+    p: &Palette,
+    label: &str,
+    value: &mut String,
+    hint: &str,
+    width: f32,
+) -> Response {
+    ui.vertical(|ui| {
+        field_label(ui, p, label);
+        let edit = egui::TextEdit::singleline(value)
+            .hint_text(hint)
+            .desired_width(width)
+            .margin(Margin::symmetric(10, 8))
+            .align(egui::Align2::LEFT_CENTER);
+        let resp = ui.add(edit);
+        if resp.has_focus() {
+            ui.painter().rect_stroke(
+                resp.rect.expand(1.0),
+                CornerRadius::same(shape::R_INPUT),
+                Stroke::new(2.0, p.accent),
+                StrokeKind::Outside,
+            );
+        }
+        resp
+    })
+    .inner
+}
+
+/// Champ mot de passe avec révélation temporaire (œil).
+pub fn password_field(ui: &mut Ui, p: &Palette, label: &str, value: &mut String) -> Response {
+    let id = ui.make_persistent_id(("pw-reveal", label));
+    let mut revealed = ui.data(|d| d.get_temp::<bool>(id).unwrap_or(false));
+    let mut edit_resp = None;
+    ui.vertical(|ui| {
+        field_label(ui, p, label);
+        ui.horizontal(|ui| {
+            let eye_w = 30.0;
+            let edit = egui::TextEdit::singleline(value)
+                .password(!revealed)
+                .desired_width((ui.available_width() - eye_w - 6.0).max(80.0))
+                .margin(Margin::symmetric(10, 8))
+                .align(egui::Align2::LEFT_CENTER);
+            edit_resp = Some(ui.add(edit));
+            let icon = if revealed { icons::VISIBILITY_OFF } else { icons::VISIBILITY };
+            if icon_button_sz(ui, p, icon, label, 28.0, 15.0).clicked() {
+                revealed = !revealed;
+                ui.data_mut(|d| d.insert_temp(id, revealed));
+            }
+        });
+    });
+    edit_resp.expect("champ de mot de passe")
+}
+
+/// Champ de recherche avec icône et bouton d'effacement.
+pub fn search_field(ui: &mut Ui, p: &Palette, value: &mut String, hint: &str) -> Response {
+    let mut resp = None;
+    Frame::NONE
+        .fill(p.field)
+        .stroke(Stroke::new(1.0, p.border))
+        .corner_radius(CornerRadius::same(shape::R_INPUT))
+        .inner_margin(Margin::symmetric(8, 3))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(icons::icon_sz(icons::SEARCH, 15.0, p.text_secondary));
+                let clear_w = if value.is_empty() { 0.0 } else { 26.0 };
+                let edit = egui::TextEdit::singleline(value)
+                    .hint_text(hint)
+                    .desired_width((ui.available_width() - clear_w).max(60.0))
+                    .frame(egui::Frame::NONE)
+                    .margin(Margin::symmetric(2, 4))
+                    .align(egui::Align2::LEFT_CENTER);
+                resp = Some(ui.add(edit));
+                if !value.is_empty()
+                    && icon_button_sz(ui, p, icons::CLOSE, "", 24.0, 13.0).clicked()
+                {
+                    value.clear();
+                }
+            });
+        });
+    resp.expect("champ de recherche")
+}
+
+/// Aide contextuelle (texte secondaire).
 pub fn hint(ui: &mut Ui, p: &Palette, text: &str) {
-    ui.label(RichText::new(text).size(12.5).color(p.text_secondary));
+    ui.label(RichText::new(text).size(text::SMALL).color(p.text_secondary));
 }
 
-/// Aide contextuelle posée directement sur le fond de travail : en thème
-/// sombre à fond clair (terracotta), la typo bascule en ton sombre.
+/// Aide posée sur le fond de travail.
 pub fn hint_on_bg(ui: &mut Ui, p: &Palette, text: &str) {
-    ui.label(RichText::new(text).size(12.5).color(p.on_bg_secondary));
+    ui.label(
+        RichText::new(text)
+            .size(text::SMALL)
+            .color(p.on_bg_secondary),
+    );
 }
+
+/// Lien d'action discret (accent, sans fond).
+pub fn link_button(ui: &mut Ui, p: &Palette, label: &str) -> Response {
+    let font = FontId::new(text::SMALL, egui::FontFamily::Name("Medium".into()));
+    let galley = ui.painter().layout_no_wrap(label.to_string(), font.clone(), p.accent);
+    let (rect, resp) =
+        ui.allocate_exact_size(Vec2::new(galley.size().x + 4.0, 20.0), Sense::click());
+    let col = if resp.hovered() {
+        p.accent_hover
+    } else {
+        p.accent
+    };
+    let galley = ui.painter().layout_no_wrap(label.to_string(), font, col);
+    ui.painter()
+        .galley(rect.center() - galley.size() * 0.5, galley, col);
+    resp
+}
+
+// ─── États ───────────────────────────────────────────────────────────────────
 
 /// État vide (aucune donnée) avec message et suggestion.
 pub fn empty_state(ui: &mut Ui, p: &Palette, message: &str, sub: &str) {
     ui.vertical_centered(|ui| {
-        ui.add_space(14.0);
-        ui.label(icons::icon_sz(icons::STORAGE, 34.0, p.text_secondary));
-        ui.add_space(4.0);
+        ui.add_space(18.0);
+        let (rect, _) = ui.allocate_exact_size(Vec2::splat(44.0), Sense::hover());
+        ui.painter()
+            .circle_filled(rect.center(), 22.0, p.soft(p.text_secondary));
+        let galley = ui.painter().layout_no_wrap(
+            icons::INBOX.to_string(),
+            FontId::new(21.0, egui::FontFamily::Name("Icon".into())),
+            p.text_secondary,
+        );
+        ui.painter()
+            .galley(rect.center() - galley.size() * 0.5, galley, p.text_secondary);
+        ui.add_space(8.0);
         ui.label(
             RichText::new(message)
-                .size(14.5)
+                .size(text::BODY)
+                .color(p.text)
                 .family(egui::FontFamily::Name("Medium".into())),
         );
-        ui.label(RichText::new(sub).size(12.5).color(p.text_secondary));
+        ui.label(RichText::new(sub).size(text::SMALL).color(p.text_secondary));
         ui.add_space(10.0);
     });
 }
 
-/// En-tête d'écran (titre 20 px + sous-titre), posé sur le fond de travail.
-pub fn screen_header(ui: &mut Ui, p: &Palette, title: &str, sub: &str) {
-    ui.vertical(|ui| {
-        ui.label(
-            RichText::new(title)
-                .size(20.0)
-                .color(p.on_bg)
-                .family(egui::FontFamily::Name("SemiBold".into())),
-        );
-        ui.label(RichText::new(sub).size(12.5).color(p.on_bg_secondary));
-        ui.add_space(8.0);
-    });
+/// État vide avec une action (bouton centré).
+pub fn empty_state_action(
+    ui: &mut Ui,
+    p: &Palette,
+    message: &str,
+    sub: &str,
+    action: &str,
+) -> Response {
+    empty_state(ui, p, message, sub);
+    let resp = ui
+        .horizontal(|ui| {
+            let w = ui.available_width();
+            ui.add_space((w - 180.0).max(0.0) * 0.5);
+            primary_button(ui, p, action)
+        })
+        .inner;
+    ui.add_space(8.0);
+    resp
+}
+
+/// Écran vide « hors connexion » avec un bouton vers l'écran Connexion.
+pub fn need_connection(ui: &mut Ui, p: &Palette, t: &crate::i18n::Tr) -> Response {
+    empty_state_action(ui, p, t.status_disconnected, t.need_connection_hint, t.go_connect)
 }
 
 /// Spinner de chargement discret + libellé.
 pub fn loading(ui: &mut Ui, p: &Palette, label: &str) {
     ui.horizontal(|ui| {
         ui.add(egui::Spinner::new().size(14.0));
-        ui.label(RichText::new(label).size(12.5).color(p.text_secondary));
+        ui.label(RichText::new(label).size(text::SMALL).color(p.text_secondary));
     });
 }
 
 /// Affiche l'ancienneté des données (traduit).
 pub fn since_label(ui: &mut Ui, p: &Palette, t: &crate::i18n::Tr, at: std::time::Instant) {
     let txt = t.since(at.elapsed().as_secs());
-    ui.label(RichText::new(txt).size(11.5).color(p.text_secondary));
+    ui.label(RichText::new(txt).size(text::MICRO).color(p.text_secondary));
 }
 
 /// Fond de modale (frame utilisée par crate::modal).
 pub fn modal_frame(p: &Palette) -> egui::Frame {
     Frame::NONE
         .fill(p.card)
-        .stroke(egui::Stroke::new(1.0, p.border))
-        .corner_radius(CornerRadius::same(14))
-        .inner_margin(Margin::same(18))
+        .stroke(Stroke::new(1.0, p.border))
+        .corner_radius(CornerRadius::same(shape::R_MODAL))
+        .inner_margin(Margin::same(20))
+        .shadow(soft_shadow(if p.dark { 90 } else { 30 }))
 }
 
 /// Titre de modale (rendu dans le contenu de la modale).
 pub fn modal_title(ui: &mut Ui, _p: &Palette, title: &str) {
     ui.label(
         RichText::new(title)
-            .size(16.0)
+            .size(17.0)
             .family(egui::FontFamily::Name("SemiBold".into())),
     );
-    ui.add_space(8.0);
+    ui.add_space(space::S);
 }
 
 // ─── Mise en page responsive (mobile-first) ──────────────────────────────────
@@ -573,20 +954,22 @@ pub fn tile_grid(
         return;
     }
     let avail = ui.available_width();
-    let cols = tile_cols(avail, min_tile_w, tiles).min(tiles);
+    let mut cols = tile_cols(avail, min_tile_w, tiles).min(tiles);
+    // Préfère un compte qui remplit des lignes entières (4 tuiles → 2×2 et non
+    // 3 + 1) ; la dernière ligne garde sinon la largeur des autres tuiles.
+    if cols > 2 && tiles % cols != 0 {
+        if let Some(c) = (2..cols).rev().find(|c| tiles % c == 0) {
+            cols = c;
+        }
+    }
     let mut i = 0usize;
     while i < tiles {
         let row = cols.min(tiles - i);
-        if row <= 1 {
-            // Une seule tuile : pleine largeur, rendue directement.
-            render(ui, p, i);
-        } else {
-            ui.columns(row, |cols_ui| {
-                for (j, col) in cols_ui.iter_mut().enumerate() {
-                    render(col, p, i + j);
-                }
-            });
-        }
+        ui.columns(cols, |cols_ui| {
+            for (j, col) in cols_ui.iter_mut().take(row).enumerate() {
+                render(col, p, i + j);
+            }
+        });
         i += row;
         if i < tiles {
             ui.add_space(TILE_GAP_Y);
@@ -594,21 +977,20 @@ pub fn tile_grid(
     }
 }
 
-/// Comble la dernière colonne d'un tableau jusqu'au bord droit de sa
-/// carte. Une `egui::Grid` se cale sur la largeur de son contenu et
-/// laisse sinon un blanc à droite ; egui expose déjà, pour la dernière
-/// colonne, comme largeur disponible tout l'espace restant — il suffit
-/// de l'allouer. À appeler dans la dernière cellule (au sein d'un
-/// sous-`Ui` `horizontal`/`vertical`, chaque widget ajouté directement
-/// étant une cellule à part entière).
+/// Comble la dernière colonne d'un tableau jusqu'au bord droit de sa carte.
+/// Une `egui::Grid` se cale sur la largeur de son contenu et laisse sinon un
+/// blanc à droite ; egui expose déjà, pour la dernière colonne, comme largeur
+/// disponible tout l'espace restant — il suffit de l'allouer. À appeler dans
+/// la dernière cellule (au sein d'un sous-`Ui` `horizontal`/`vertical`, chaque
+/// widget ajouté directement étant une cellule à part entière).
 pub fn stretch_cell(ui: &mut Ui) {
-    ui.allocate_exact_size(egui::vec2(ui.available_width(), 0.0), egui::Sense::hover());
+    ui.allocate_exact_size(Vec2::new(ui.available_width(), 0.0), Sense::hover());
 }
 
-/// Paramètre d'interface « libellé + contrôle » : sur une même ligne tant
-/// que la largeur disponible atteint `min_inline_w`, sinon empilés
-/// (libellé au-dessus, contrôle pleine largeur). C'est la brique
-/// responsive de chaque paramètre des écrans.
+/// Paramètre d'interface « libellé + contrôle » : sur une même ligne tant que
+/// la largeur disponible atteint `min_inline_w`, sinon empilés (libellé
+/// au-dessus, contrôle pleine largeur). C'est la brique responsive de chaque
+/// paramètre des écrans.
 pub fn labeled_control(
     ui: &mut Ui,
     p: &Palette,
@@ -617,20 +999,31 @@ pub fn labeled_control(
     add: impl FnOnce(&mut Ui),
 ) {
     let label_text = RichText::new(label)
-        .size(12.5)
+        .size(text::SMALL)
         .color(p.text_secondary)
         .family(egui::FontFamily::Name("Medium".into()));
     if ui.available_width() >= min_inline_w {
         ui.horizontal(|ui| {
-            ui.label(label_text);
+            let w = (ui.available_width() * 0.42).clamp(90.0, 190.0);
+            ui.allocate_ui_with_layout(Vec2::new(w, 18.0), Layout::left_to_right(Align::Center), |ui| {
+                ui.label(label_text);
+            });
             add(ui);
         });
     } else {
         ui.label(label_text);
+        ui.add_space(2.0);
         add(ui);
     }
 }
 
+/// En-tête de colonne de tableau.
+pub fn th(p: &Palette, s: &str) -> RichText {
+    RichText::new(s)
+        .size(text::MICRO)
+        .color(p.text_secondary)
+        .family(egui::FontFamily::Name("Medium".into()))
+}
 
 #[cfg(test)]
 mod tests {
@@ -675,7 +1068,7 @@ mod tests {
         crate::fonts::install(&ctx);
         let p = palette();
         for w in [360.0, 900.0, 1280.0] {
-            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w, 720.0));
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(w, 720.0));
             ctx.begin_pass(egui::RawInput {
                 screen_rect: Some(screen),
                 ..Default::default()
@@ -685,13 +1078,10 @@ mod tests {
             ctx.root_ui(|ui| {
                 tile_grid(ui, &p, 340.0, 4, |ui, _p, i| {
                     card_body(ui, &p, |ui| {
-                        ui.set_min_width(ui.available_width() - 2.0);
                         ui.label(format!("tuile {i}"));
                         ui.add_space(8.0);
-                        let (r, _) = ui.allocate_exact_size(
-                            egui::vec2(10.0, 2.0),
-                            egui::Sense::hover(),
-                        );
+                        let (r, _) =
+                            ui.allocate_exact_size(Vec2::new(10.0, 2.0), Sense::hover());
                         marks.push(r);
                     });
                 });
@@ -707,13 +1097,11 @@ mod tests {
                 );
             }
             if w >= 688.0 {
-                // Deux tuiles côte à côte : la 2e commence après la 1re.
                 assert!(
                     marks[1].left() >= marks[0].right() - 0.5,
                     "attendu côte à côte (largeur {w}) : {marks:?}"
                 );
             } else {
-                // Empilées : chaque tuile commence sous la précédente.
                 for pair in marks.windows(2) {
                     assert!(
                         pair[1].top() >= pair[0].bottom() - 0.5,
@@ -732,7 +1120,7 @@ mod tests {
         crate::fonts::install(&ctx);
         let p = palette();
         for (w, expect_inline) in [(600.0, true), (200.0, false)] {
-            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w, 400.0));
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(w, 400.0));
             ctx.begin_pass(egui::RawInput {
                 screen_rect: Some(screen),
                 ..Default::default()
@@ -748,8 +1136,6 @@ mod tests {
             });
             let mut output = ctx.end_pass();
             output.textures_delta.clear();
-            // En ligne : le champ démarre quasiment au même niveau que le
-            // libellé. Empilé : il démarre sous la ligne du libellé (~20 px).
             let delta = field_top - start_y;
             let actually_inline = delta < 10.0;
             assert_eq!(
@@ -763,5 +1149,42 @@ mod tests {
     fn ellipsize_coupe_avec_ellipse() {
         assert_eq!(ellipsize("abcdef", 10), "abcdef");
         assert_eq!(ellipsize("abcdef", 3), "abc…");
+    }
+
+    /// Un bouton désactivé n'accepte pas le clic et reste lisible.
+    #[test]
+    fn boutons_ont_une_hauteur_homogene() {
+        let ctx = egui::Context::default();
+        crate::fonts::install(&ctx);
+        let p = palette();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(700.0, 300.0));
+        ctx.begin_pass(egui::RawInput {
+            screen_rect: Some(screen),
+            ..Default::default()
+        });
+        let rects = ctx.root_ui(|ui| {
+            [
+                styled_button(ui, &p, "Principal", BtnKind::Primary).rect,
+                styled_button_en(ui, &p, "Secondaire", BtnKind::Ghost, true).rect,
+                styled_button_en(ui, &p, "Désactivé", BtnKind::Primary, false).rect,
+                styled_button(ui, &p, "Discret", BtnKind::Quiet).rect,
+            ]
+        });
+        let mut output = ctx.end_pass();
+        output.textures_delta.clear();
+        for r in rects {
+            assert!((r.height() - shape::BTN_H).abs() < 0.5, "hauteur : {r:?}");
+        }
+    }
+
+    /// Le texte des boutons pleins est choisi pour rester lisible : sombre sur
+    /// un aplat clair (accent du thème sombre), blanc sur un aplat foncé.
+    #[test]
+    fn texte_des_boutons_pleins_contraste() {
+        let light = Palette::new(crate::config::ThemeKind::Light);
+        let dark = Palette::new(crate::config::ThemeKind::Dark);
+        assert_eq!(readable_on(light.accent, &light), WHITE);
+        assert_eq!(readable_on(dark.accent, &dark), dark.on_accent);
+        assert_eq!(readable_on(dark.danger, &dark), dark.on_accent);
     }
 }

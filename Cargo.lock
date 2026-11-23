@@ -483,12 +483,13 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
 name = "bastion"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "bastion-core",
  "eframe",
  "egui",
+ "png",
  "rfd",
  "serde",
  "serde_json",
@@ -497,7 +498,7 @@ dependencies = [
 
 [[package]]
 name = "bastion-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "nix",

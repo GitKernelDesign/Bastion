@@ -13,6 +13,7 @@
 |---|---|
 | **UFW** | Connaître l'état du pare-feu d'un coup d'œil ; l'activer/désactiver ; régler les politiques par défaut ; ajouter/supprimer des règles (port, protocole, IP source/destination, profil d'application, commentaire) ; régler la journalisation ; voir le rapport ; réinitialiser. |
 | **Fail2Ban** | Savoir si le service tourne ; lister les prisons (jails) ; voir les IP bannies ; bannir / débannir une IP ; consulter les paramètres d'une prison (bantime, findtime, maxretry) ; démarrer/arrêter/redémarrer le service ; recharger une prison ; consulter les journaux système. |
+| **ClamAV** | Voir l'état des services `clamav-daemon` et `clamav-freshclam` ; connaître la version du moteur, le nombre de signatures et leur date ; lancer une mise à jour ; analyser un chemin à la demande (lecture seule) ; consulter les journaux `clamd` et `freshclam`. |
 | **Accès** | Travailler en local (la machine où l'app tourne) ou sur un ordinateur distant via SSH (profil de connexion enregistré). |
 | **Confiance** | Voir *ce que l'application fait* : chaque commande passée au système est journalisée, visible et compréhensible. |
 
@@ -136,126 +137,149 @@
 
 ### 4.1 Structure générale
 
+**Fenêtre large (≥ 720 px) — barre latérale + barre d'état**
+
 ```
-┌──────────┬──────────────────────────────────────────────────────────┐
-│          │  ● Connecté — Local (root)            ⟳ auto   ⟳   ⚙      │  barre sup.
-│  Bastion ├──────────────────────────────────────────────────────────┤
-│          │                                                          │
-│ Connexion│   [ cartes d'état — visibles à chaque écran du domaine ]  │
-│          │                                                          │
-│ Pare-feu │   [ zone principale : tableaux, actions ]                │
-│          │                                                          │
-│ Fail2Ban │                                                          │
-│          │                                                          │
-│ Journal  │                                                          │
-│          │                                                          │
-│ Paramètres│                                                          │
-└──────────┴──────────────────────────────────────────────────────────┘
+Pare-feu                                        ← écran courant
+├─ Barre supérieure (54)   ● Local (assistant root) ›     Auto  ⟳  ⋮
+├─ Barre latérale (224)    identité · Administration · Suivi · Paramètres
+│                          pied : v0.3.0 · ● ● · Local (assistant root)
+├─ En-tête (fixe)          Pare-feu
+│                          État du pare-feu UFW, politiques et règles en vigueur.
+├─ Contenu (défile)
+│  ├─ Carte « État du pare-feu »      interrupteur + synthèse + actions
+│  ├─ Tuiles : 7 Règles · 5 Autorisations · 1 Blocages
+│  ├─ Carte « Politiques par défaut »
+│  ├─ Carte « Règles (7) »
+│  └─ Carte « Détails techniques » (repliée)
+└─ Barre d'état (26)       Pare-feu activé                              Auto
 ```
 
-- **Barre latérale** (220 px, repliable à 64 px en icônes) : identité de l'app + 5
-  entrées. L'entrée active est marquée par une pilule d'accent, pas par une couleur.
-- **Barre supérieure** : toujours visible ; donne le **contexte** (quelle machine
-  suis-je en train de toucher ?) — point vert (local) / bleu (SSH, nom du serveur
-  en mono) / rouge (déconnecté), bouton actualiser, interrupteur auto-actualisation,
-  réglages. C'est la seule barre toujours identique : elle répond à la question
-  la plus fréquente en administration distante (« suis-je bien sur le bon serveur ? »).
-- **Zone contenu** : cartes à coins arrondis (12 px), fond légèrement plus clair
-  que le fond de page, ombre nulle (sobriété), titre de carte en 12 px majuscules
-  espacées + actions à droite.
-- **Barre d'état** en bas (24 px) : dernier événement + compteur d'actions en cours.
+**Fenêtre compacte (< 720 px) — navigation basse**
+
+```
+Pare-feu
+├─ Barre supérieure (54)   ● Local (assistant root) ›           ⟳   ⋮
+├─ En-tête (fixe)          Pare-feu + sous-titre
+├─ Contenu (défile, une colonne)
+│  ├─ Carte pleine largeur
+│  └─ Tuiles empilées (une colonne si la largeur ne permet pas deux tuiles)
+├─ Barre d'état (26)       Pare-feu activé                             Auto
+└─ Navigation basse (62)   Connexion · Pare-feu · Fail2Ban · Antivirus · Journal · Paramètres
+```
+
+- **Barre latérale** (224 px) : identité (« Bastion · UFW & Fail2Ban »), deux
+  groupes — *Administration* (Connexion, Pare-feu, Fail2Ban, Antivirus) et *Suivi*
+  (Journal) —, Paramètres ancré en bas, puis un pied de barre : version, deux points
+  d'état (outils détectés) et la cible courante. L'entrée active est une pilule
+  teintée doublée d'une barre d'accent à gauche ; les entrées concernées portent un
+  badge chiffré (règles, prisons), jamais un « 0 ».
+- **Pas de repli en icônes** : sous 720 px la navigation passe en bas d'écran. Un
+  seul point de bascule, moins de modes à maintenir, des libellés toujours lisibles.
+- **Barre supérieure** (54 px) : elle donne le **contexte** (quelle machine suis-je
+  en train de toucher ?) — pastille verte (local), bleue (SSH, nom du serveur en
+  mono), rouge (déconnecté) —, puis actualiser et menu. C'est la seule barre toujours
+  identique d'un écran à l'autre.
+- **En-tête d'écran** : titre 21 px SemiBold + sous-titre 12 px en texte secondaire ;
+  il reste fixe pendant que le contenu défile en dessous.
+- **Cartes** : rayon 13 px, bordure 1 px, padding 16–18 px, **aucune ombre** — la
+  profondeur vient de trois couches (chrome, fond de travail, carte).
+- **Barre d'état** (26 px) : dernier événement à gauche, état de l'actualisation
+  automatique à droite (« Auto · 5 s », en vert quand elle est active ; raccourcis
+  en infobulle). Les notifications se posent **au-dessus** d'elle (voir 4.8).
 
 ### 4.2 Écran « Connexion »
 
 ```
-┌──────────────────────────────────────────────┐
-│  Où voulez-vous agir ?                        │
-│                                              │
-│  ┌─────────────────┐  ┌─────────────────┐    │
-│  │ ☑ CETTE MACHINE │  │   À DISTANCE    │    │
-│  │                 │  │   (SSH)         │    │
-│  │ UFW et Fail2Ban │  │  hôte port user │    │
-│  │ de cet ordinate.│  │  profil: [v]    │    │
-│  │ [ Se connecter ]│  │ [ Se connecter ]│    │
-│  └─────────────────┘  └─────────────────┘    │
-│                                              │
-│  i Les mots de passe ne sont jamais          │
-│    enregistrés. Droits root demandés une     │
-│    seule fois par session (polkit).          │
-└──────────────────────────────────────────────┘
+Connexion
+├─ Carte « Cette machine »                                    badge LOCAL
+│  ├─ pastilles d'outils : ✓ ufw 0.36.2   ✓ Fail2Ban v1.1.1
+│  ├─ [ Se connecter ]                              (pleine largeur, principal)
+│  └─ « Une fenêtre de mot de passe apparaîtra une seule fois pour la session. »
+└─ Carte « À distance (SSH) »                                  badge SSH
+   ├─ Profil enregistré   [ … v ]                                    🗑
+   ├─ Hôte                [ … ]
+   ├─ Port [ 22 ]   Utilisateur [ … ]          (une seule ligne)
+   ├─ Authentification   [ Mot de passe │ Clé privée ]   (segmenté, pleine largeur)
+   ├─ Mot de passe (ou clé + phrase secrète)   [ … ]  👁
+   ├─ [ Se connecter ]                              (avant les options repliées)
+   ├─ « L'empreinte de la clé du serveur sera vérifiée à la première connexion. »
+   └─ ▾ Options de connexion : exécution via sudo (+ mot de passe), enregistrer le profil
 ```
 
-- Carte locale : détecte et affiche si UFW/Fail2Ban sont installés *avant* la
-  connexion (retour immédiat, sans droits) → évite l'erreur tardive.
-- Carte SSH : liste des profils enregistrés ; « + Nouveau profil » ; le mot de
-  passe est un champ de session, jamais persisté ; option « exécuter via sudo »
-  pour les connexions sans utilisateur root.
-- Après connexion, cet écran devient un récapitulatif (hôte, version des outils
-  détectées, durée de session, bouton Déconnecter).
+- Chaque carte porte son badge (`LOCAL` / `SSH`) et une icône dans une pastille :
+  on reconnaît la carte avant de lire son titre.
+- Carte locale : l'app détecte UFW et Fail2Ban **avant** la connexion (pastilles
+  vertes/rouges, nom d'outil dédoublonné de sa version) → l'absence d'outil se voit
+  immédiatement, sans droits root.
+- Carte SSH : profils enregistrés en premier (liste déroulante + suppression),
+  hôte, port et utilisateur sur une ligne, puis l'**authentification** en sélecteur
+  segmenté pleine largeur (mot de passe / clé privée + phrase secrète).
+- Le bouton **Se connecter** est placé *avant* les options repliées : le parcours
+  courant (hôte, utilisateur, mot de passe, connexion) ne demande aucun dépliage.
+- « Options de connexion » replie le rare : exécution via `sudo` (et son mot de
+  passe), enregistrement du profil sous un nom.
+- Le champ d'empreinte de clé, lui, reste toujours visible : c'est la promesse de
+  sécurité (TOFU) que l'on veut lire avant de cliquer.
 
 ### 4.3 Écran « Pare-feu » (UFW)
 
 ```
-┌ Pare-feu ────────────────────────────────────────────────────────┐
-│                                                                  │
-│  ┌ Pare-feu ─────────┐ ┌ Politiques par défaut ─┐ ┌ Journal ───┐ │
-│  │ ● ACTIF            │ │ Entrée   [Refuser v]  │ │ ● Faible   │ │
-│  │ UFW 0.36.2         │ │ Sortie   [Autoriser v]│ │ [Niveau v] │ │
-│  │ [ Interrupteur ]   │ │ Routage  [Refuser v]  │ │            │ │
-│  └────────────────────┘ └───────────────────────┘ └────────────┘ │
-│                                                                  │
-│  ┌ Règles (12) ────────────────────────────── [+ Ajouter] [⟳] ┐ │
-│  │ #  Action    De           Vers       Port    Proto  Comment. │ │
-│  │ 1  Autoriser Partout      Partout   22/tcp  —      SSH      │ │
-│  │ 2  Autoriser 10.0.0.0/8   Partout   80,443  tcp    Web      │ │
-│  │ 3  Bloquer   Partout      192.168.1.5 —       —      —       │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-│  [ Rapport UFW ]  [ Réinitialiser… ]   ← actions rares, en bas   │
-└──────────────────────────────────────────────────────────────────┘
+Pare-feu
+├─ [Bandeau] ⛔ Pare-feu inactif — votre machine est exposée.  [ Activer maintenant ]
+│                                                       (affiché seulement si arrêté)
+├─ Carte « État du pare-feu »                                        il y a 4 s
+│  ├─ ● Actif                                              [interrupteur]
+│  ├─ Service UFW · active                                 ufw 0.36.2
+│  ├─ Entrée Refuser · Sortie Autoriser · Routage Refuser · Journalisation Faible
+│  └─ [Rapport]  [Recharger]        Réinitialiser…            (lien discret)
+├─ Tuiles : 7 Règles · 5 Autorisations · 1 Blocages
+├─ Carte « Politiques par défaut »
+│  ├─ Entrée   [Autoriser │ Refuser │ Rejeter]        Journalisation [Faible v]
+│  ├─ Sortie   [Autoriser │ Refuser │ Rejeter]        (2 colonnes en large)
+│  ├─ Routage  [Autoriser │ Refuser │ Rejeter]        (empilé en compact)
+│  └─ Rejeter = refuse avec notification ; Refuser = silencieux.
+├─ Carte « Règles (7) »                                       [+ Ajouter]  ⟳
+│  ├─ ⌕ Rechercher une règle
+│  └─ # · Action · De · Vers · Port · Commentaire
+└─ Carte « Détails techniques » (repliée) : sortie brute, service systemd
 ```
 
-- **Carte Pare-feu** : le composant le plus important de l'app. Un interrupteur
-  grand (44 px), vert si actif, gris si inactif ; phrase d'état en clair.
-  Désactiver → modale de confirmation (conséquences expliquées).
-- **Carte Politiques** : trois listes (Autoriser / Refuser / Rejeter).
-  Le choix est appliqué immédiatement à la sélection — pas de bouton « Appliquer »
-  (les politiques par défaut sont réversibles ; le Journal reste la preuve).
-  « Rejeter » vs « Refuser » est accompagné d'une infobulle explicative.
-- **Carte Journal** : niveau de journalisation UFW (désactivé → complet) en
-  liste déroulante + explication d'une ligne.
-- **Table Règles** : en-têtes triables, zébrage discret, colonne action colorée
-  (vert Autoriser / rouge Bloquer / ambre Rejeter), IPv6 : badge « v6 » sur la
-  règle logique au lieu de deux lignes dupliquées (une règle = une intention ;
-  l'app dissimule la complexité mais reste fidèle à la réalité).
-  Recherche instantanée au-dessus de la table.
-- Les boutons d'action rares (Rapport, Réinitialiser) sont *en bas* : le regard de
-  l'expert descend vers le rare, jamais l'inverse. Réinitialiser demande la saisie
-  de « RÉINITIALISER » (irréversible).
+- **Un seul « héro »** : la carte d'état réunit le point d'état, l'interrupteur
+  (44 px de haut, vert/actif), la version, la **synthèse des politiques** en quatre
+  pastilles (entrée, sortie, routage, journalisation) et les actions principales.
+  La ligne « Service UFW · active » confirme que le service systemd suit l'état.
+- **Bandeau d'alerte** uniquement quand le pare-feu est inactif : il explique la
+  conséquence et propose l'activation *sur place* (l'utilisateur n'a pas à chercher
+  l'interrupteur).
+- **Trois tuiles** (règles, autorisations, blocages) : des chiffres qui se lisent
+  sans lire. La tuile « journalisation » a été supprimée — l'information figure déjà
+  dans le héro.
+- **Carte Politiques + journalisation** : une seule carte. En large, deux colonnes
+  (politiques à gauche, liste de journalisation à droite) ; en compact, empilées.
+  Enregistrement immédiat, pas de bouton « Appliquer » : ces réglages sont
+  réversibles et le Journal garde la preuve. Le sens de « Rejeter » vs « Refuser »
+  est rappelé en pied de carte.
+- **Table des règles** : recherche instantanée, ajout dans un composeur repliable
+  (avec aperçu de la commande), colonne action colorée et doublée d'un libellé,
+  badge `v6` sur la règle logique plutôt que deux lignes dupliquées.
+- **Actions rares et techniques en bas**, dans une carte repliée : rapport UFW,
+  sortie brute, service systemd, réinitialisation (saisie de « RÉINITIALISER »).
 
 ### 4.4 Modale « Ajouter une règle »
 
 ```
-┌ Ajouter une règle ────────────────────────────────┐
-│  [ Autoriser │ Bloquer │ Rejeter ]  (segmenté)   │
-│  [ Entrée │ Sortie ]              (segmenté)     │
-│                                                   │
-│  Port / service   [ 8080        ]  ✓              │
-│  Protocole        [ TCP │ UDP │ les deux ]        │
-│                                                   │
-│  ▸ Options avancées                               │
-│  ┌───────────────────────────────────────┐       │
-│  │ Source      [ Partout ou 192.168.0.0/24 ]      │
-│  │ Destination [ Partout ou 10.0.0.5       ]     │
-│  │ Position    [ À la fin / n° 1…9         ]     │
-│  │ Commentaire [ Serveur web interne       ]      │
-│  │ Profil     [ …liste ufw app list…      ]      │
-│  └───────────────────────────────────────┘       │
-│                                                   │
-│  Aperçu : ufw allow in proto tcp from any \       │
-│           to any port 8080 comment '…'   (mono)  │
-│                                                   │
-│                       [ Annuler ]  [ Ajouter ]    │
-└──────────────────────────────────────────────────┘
+Ajouter une règle
+├─ [ Autoriser │ Bloquer │ Rejeter ]                        (segmenté)
+├─ [ Entrée │ Sortie ]                                      (segmenté)
+├─ Port / service    [ 8080 ]  ✓
+├─ Protocole         [ TCP │ UDP │ les deux ]
+├─ ▸ Options avancées
+│  ├─ Source [ Partout ou 192.168.0.0/24 ] · Destination [ Partout ou 10.0.0.5 ]
+│  ├─ Position [ À la fin / n° 1…9 ] · Commentaire [ Serveur web interne ]
+│  └─ Profil [ … liste ufw app list … ]
+├─ Aperçu : ufw allow in proto tcp from any to any port 8080 comment '…'   (mono)
+└─ [ Annuler ]   [ Ajouter ]
 ```
 
 Point clé : un **aperçu de la commande réelle** en bas de la modale, en police
@@ -266,110 +290,171 @@ offre sa contrepartie textuelle exacte.
 ### 4.5 Écran « Fail2Ban »
 
 ```
-┌ Fail2Ban ────────────────────────────────────────────────────────┐
-│  ┌ Service ──────────┐ ┌ Prisons ────┐ ┌ Bannis actuellement ──┐ │
-│  │ ● Actif (1.1.1)    │ │ 3 prisons   │ │ 12 IP · 2 prisons    │ │
-│  │ [Démarrer/Arrêter] │ │ actives     │ │                      │ │
-│  │ [Redémarrer] [Rech.]│ └─────────────┘ └──────────────────────┘ │
-│                                                                  │
-│  ┌ Prisons ───────────────────────────────────────────────────┐ │
-│  │ Prison  Bannis  Échecs  bantime  findtime  maxretry        │ │
-│  │ sshd       2      14     10 min    10 min    5      [Ouvrir]│ │
-│  │ nginx      0       0     1 h       10 min    3      [Ouvrir]│ │
-│  └─────────────────────────────────────────────────────────────┘ │
-│                                                                  │
-│  ┌ Prison « sshd » ───────────────────────────────────────────┐ │
-│  │ Échecs actuels : 3 · Journal : /var/log/auth.log (mono)     │ │
-│  │ Bannir une IP [ 203.0.113.40 ] [Bannir]                    │ │
-│  │ ┌ IP bannies ────────────────────────────────────────┐    │ │
-│  │ │ 203.0.113.40   depuis 14 min   [Débannir]           │    │ │
-│  │ │ 198.51.100.7   depuis  2 min   [Débannir]           │    │ │
-│  │ └─────────────────────────────────────────────────────┘    │ │
-│  │ [ Recharger la prison ] [ Journal du service ]              │ │
-│  └────────────────────────────────────────────────────────────┘ │
-└──────────────────────────────────────────────────────────────────┘
+Fail2Ban
+├─ Tuiles : 3 Prisons · 5 Bannies · 54 Échecs
+├─ Carte « Service Fail2Ban »                                       il y a 4 s
+│  ├─ ● Service active           [Redémarrer]  [Arrêter]  [Recharger]
+│  └─ Journal · Toutes les IP                              (liens à droite)
+├─ Maître-détail au-delà de 760 px, empilé en dessous
+│  ├─ Carte « Prisons (3) »                                     40 %
+│  │  ├─ ⌕ Filtrer les prisons
+│  │  └─ Prison · Bannies · Échecs                (chiffres alignés à droite)
+│  │     sshd 3 42 ›   ·   nginx-http-auth 2 12 ›   ·   postfix-sasl 0 0 ›
+│  └─ Carte « Prison « sshd » »                                 60 %      ⟳
+│     ├─ Échecs 42 · Total 1 284
+│     ├─ maxretry 5 · bantime 1 h · findtime 10m
+│     ├─ Surveille : /var/log/auth.log
+│     ├─ IP [ 203.0.113.40 ]  (Bannir)              (validée IPv4/IPv6/CIDR)
+│     └─ IP BANNIES (3)     203.0.113.42 · depuis 14 min          ⧉
 ```
 
-- Même grammaire visuelle que l'écran Pare-feu (3 cartes + table) : la
-  reconnaissance bat la variété.
-- Bannir/débannir : actions rapides, toast + Annuler. Le champ IP valide la
-  syntaxe (IPv4/IPv6/CIDR) et désactive le bouton sinon.
-- Le bouton « Journal du service » ouvre un panneau de lecture des derniers
-  journaux systemd (`journalctl -u fail2ban`), en mono, lecture seule.
+- **Maître-détail** au-delà de 760 px : la liste des prisons occupe 40 %, le
+  détail 60 % ; en dessous, les deux cartes s'empilent. On garde le contexte de la
+  liste en lisant le détail — plus besoin de revenir en arrière.
+- Les **colonnes chiffrées sont alignées à droite** (en-têtes compris) et rendues
+  par `paint` : les nombres se comparent verticalement, comme dans un tableau
+  comptable.
+- La liste est filtrable par nom, et la prison sélectionnée est marquée (fond teinté
+  + chevron). La flèche indique qu'une ligne est cliquable, pas un bouton.
+- Le détail concentre : compteurs, paramètres de la prison, fichier surveillé,
+  champ de bannissement (validé : IPv4/IPv6/CIDR) et liste des IP bannies avec copie
+  par ligne.
+- Les journaux restent à portée de main dans l'en-tête du service (journal du
+  service, toutes les IP bannies) : ce sont des consultations, pas des actions.
 
 ### 4.6 Écran « Journal »
 
-Table horodatée de toutes les commandes exécutées par l'application :
-heure · domaine · opération · commande (mono) · résultat (code + badge).
-Filtres par domaine et par statut. Copie en un clic. Plafonné à 500 entrées
-en mémoire (anti-croissance), mention affichée.
+```
+Journal
+├─ Sous-titre : chaque commande passée au système, avec son résultat.
+└─ Carte
+   ├─ Filtres comptés : (Tout 10) (Erreurs 1) (Pare-feu 4) (Fail2Ban 5)
+   │                                          [⧉ Copier la vue]     🗑
+   ├─ En-tête : Heure · État · Commande · Détail
+   └─ Colonnes fixes, troncature « … » + infobulle, copie par ligne (⧉)
+      08:23:08  ✓  clamscan --version                          code 0
+      08:22:31  ✗  ufw delete 5                   ERROR: Could not del…
+      08:21:54  ✓  fail2ban-client set sshd unbanip 203.0.113.42
+```
+
+- Table horodatée de **toutes** les commandes exécutées : heure, état, commande
+  (mono), détail. Une ligne = une commande réelle, jamais une reformulation.
+- **Colonnes à largeur fixe** : la commande et le détail sont tronqués avec « … »
+  au lieu de forcer un retour à la ligne par mot (l'ancienne version cassait la
+  lecture verticale). L'infobulle donne le texte complet, la copie par ligne (⧉)
+  le met dans le presse-papiers.
+- Filtres en pastilles **comptées** (tout, erreurs, pare-feu, Fail2Ban) et « Copier
+  la vue » pour coller un rapport dans un ticket.
+- Effacement confirmé par une modale ; plafond de 500 entrées en mémoire
+  (anti-croissance), mention affichée.
 
 ### 4.7 Écran « Paramètres »
 
-- Thème : Sombre (défaut) / Clair. Taille de texte : S / M / L.
-- Actualisation automatique : activée, intervalle (3–60 s).
-- Comportement SSH : préfixe sudo (jamais de mot de passe stocké).
-- Emplacement des fichiers de configuration + bouton « Révéler ».
+Quatre cartes, sans bouton « Enregistrer » : chaque contrôle est persisté
+immédiatement.
+
+```
+Paramètres
+├─ Carte « Apparence »
+│  ├─ Langue    [ Français v ]
+│  ├─ Thème     [ Système │ Clair │ Sombre ]
+│  ├─ Texte     [ A− │ A │ A+ ]
+│  └─ Notifications de succès (4 s)                          [switch]
+├─ Carte « Actualisation automatique »
+│  ├─ Actualiser l'état périodique                           [switch]
+│  ├─ Intervalle    [——●————————] 5.0 s              (toujours actif)
+│  └─ Raccourcis clavier : Ctrl+1…6 · Ctrl+R · Ctrl+N
+├─ Carte « Données et sécurité »   chemin (mono) · [Ouvrir] [Oublier]
+└─ Carte « À propos »              ⬢ Bastion v0.3.0 · GPL-3.0
+```
+
+- **Apparence** : langue (nom natif, sélectionnable au clavier), thème
+  **Système / Clair / Sombre** (le système par défaut : l'app suit le bureau),
+  taille de texte (A− / A / A+), notifications de succès.
+- **Actualisation automatique** : l'interrupteur commande l'actualisation
+  silencieuse ; le curseur d'intervalle reste **toujours actif** (le griser serait
+  trompeur et plus difficile à viser). Les raccourcis clavier sont rappelés en bas
+  de carte.
+- **Données et sécurité** : chemin de configuration (mono, tronqué au milieu avec
+  infobulle), « Ouvrir le dossier », « Oublier les hôtes connus » (TOFU) et compteur.
+- **À propos** : version, licence, une phrase sur l'assistant root.
+- En large, les quatre cartes forment une grille ; en compact, une seule colonne.
 
 ### 4.8 Composants transverses
 
-- **Toast** (bas-droite, 4 s, empilable) : succès / erreur / info ;
-  optionnellement un bouton d'action (« Annuler »). Les erreurs restent
-  jusqu'à fermeture manuelle (jamais de message d'erreur éphémère).
-- **Modale** : le fond est assombri ; le focus clavier est piégé ;
-  Échap = Annuler ; Entrée = action principale. Le bouton dangereux est
-  toujours le plus à droite, en rouge plein.
-- **Indicateur de connexion** : point vert/bleu/ambre/rouge + libellé, jamais
-  de vert si une commande vient d'échouer (l'état est re-évalué à chaque cycle).
-- **Chargement** : le bouton devient spinner + texte « … » ; les données
-  précédentes restent affichées, grisées à 60 % — jamais d'écran vide qui flash.
+- **Toast** (au-dessus de la barre d'état, 4 s, empilable, 4 au plus) : succès /
+  erreur / info ; optionnellement un bouton d'action (« Annuler »). Les erreurs
+  restent jusqu'à fermeture manuelle. Le placement est calculé pour **ne jamais
+  recouvrir** la barre d'état ni la navigation basse.
+- **Modale** : fond assombri, focus piégé, `Échap` = Annuler, `Entrée` = action
+  principale. Le bouton dangereux est le plus à droite, en teinte danger pleine.
+- **Bouton désactivé** : fond neutre (`card_hover` atténué) + contour, texte en
+  secondaire — jamais une barre d'accent délavée qui ressemblerait à une barre de
+  progression.
+- **Indicateur de connexion** : point vert/bleu/ambre/rouge + libellé, jamais de
+  vert si la dernière commande a échoué (l'état est réévalué à chaque cycle).
+- **Chargement** : le bouton devient spinner + texte ; les données précédentes
+  restent affichées, atténuées — jamais d'écran vide qui clignote.
+- **Tuiles** : grille qui évite les lignes incomplètes (quatre tuiles = 2 × 2, pas
+  3 + 1) et conserve la largeur des tuiles sur la dernière ligne.
+- **Champs** : libellé au-dessus, hauteur 34 px, rayon 8 px, placeholder en
+  secondaire ; les champs de mot de passe ont un bouton œil.
 
 ---
 
 ## 5. Système de design
 
-### 5.1 Palette (thème sombre — défaut)
+### 5.1 Palette
 
-| Rôle | Valeur | Usage |
-|---|---|---|
-| Fond page | `#15161A` | arrière-plan |
-| Fond carte | `#1E2026` | cartes, tables |
-| Bordure | `#2A2D35` | séparateurs discrets |
-| Texte 1er | `#E8EAED` | titres, valeurs |
-| Texte 2e | `#9AA0AA` | libellés, aide |
-| Accent | `#4C8DFF` | sélection, boutons principaux, liens |
-| Succès | `#3FB96F` | actif, autorisé |
-| Avertissement | `#E5A13C` | attention, rejeter |
-| Danger | `#E5484D` | désactivé, bloquer, destructif |
+Trois couches par thème : **chrome** (barres) → **fond de travail** → **cartes**.
+La hiérarchie se lit sans trait ; les bordures ne servent qu'aux champs et aux
+séparateurs.
 
-Thème clair dérivé (fond `#F7F8FA`, cartes `#FFFFFF`, accent `#2F6FE4`,
-mêmes sémantiques). Le rouge n'est **jamais** utilisé hors d'un sens danger.
+| Rôle | Clair | Sombre | Usage |
+|---|---|---|---|
+| Chrome (`bg_alt`) | `#FAF7F4` | `#0E0B0A` | barre latérale, barres sup./état |
+| Fond (`bg`) | `#F2EDE9` | `#141110` | zone de travail |
+| Carte (`card`) | `#FFFFFF` | `#1E1917` | cartes, tableaux |
+| Champ (`field`) | `#FAF7F4` | `#171312` | saisies, aperçus mono |
+| Bordure | `#E6DBD3` | `#352C28` | séparateurs, contours |
+| Texte | `#1F1A17` | `#F5EFEB` | titres, valeurs |
+| Texte 2d | `#6F625A` | `#A99A90` | libellés, aides |
+| Accent | `#B4532F` | `#E38B66` | boutons principaux, sélection, liens |
+| Succès | `#0F7B57` | `#57D9A3` | actif, autorisé |
+| Avertissement | `#A15C07` | `#F5C264` | attention, « rejeter » |
+| Danger | `#B4233C` | `#FF8095` | inactif, bloqué, destructif |
+
+Le neutre est **chaud** (papier, encre) et l'accent est le terracotta de l'icône :
+l'application n'arbore pas le bleu « console » habituel. Le texte posé sur un aplat
+d'accent est choisi automatiquement (blanc sur terracotta sombre, encre sur
+terracotta clair) pour dépasser 4,5:1 ; un test unitaire vérifie chaque couple.
 
 ### 5.2 Typographie
 
-- **IBM Plex Sans** (embarquée) — Regular 14 px, Medium 14–15 px, SemiBold 16–20 px
-  pour les titres de cartes, Bold réservé aux titres d'écran.
-- **IBM Plex Mono** — 13 px — réservée aux *données techniques* : adresses IP,
-  CIDR, ports, commandes, empreintes SSH, sorties brutes. La mono rend les
-  données comparables d'une ligne à l'autre et signale « ceci est exactement
-  ce qui sera exécuté ».
-- Hiérarchie : écran 20 px SemiBold → carte 12 px majuscules espacées →
-  valeur 15–18 px → aide 12,5 px texte 2e.
+- **IBM Plex Sans** (embarquée) — corps 14 px, libellés 13 px, titres de cartes
+  14,5 px Medium, titres d'écran 21 px SemiBold, aides 11–12 px.
+- **IBM Plex Mono** — 12,5 px — réservée aux *données techniques* : adresses IP,
+  CIDR, ports, commandes, empreintes SSH, sorties brutes. La mono rend les données
+  comparables d'une ligne à l'autre et signale « ceci est exactement ce qui sera
+  exécuté ».
+- Une seule échelle (`DISPLAY` 21 · `TITLE` 14,5 · `BODY` 14 · `LABEL` 13 ·
+  `SMALL` 12 · `MICRO` 11) multipliée par le facteur d'accessibilité
+  (A− 0,9 · A 1 · A+ 1,15).
 
 ### 5.3 Espacement & formes
 
-- Grille de 8 px (marges de cartes 16 px, gouttières 12 px, padding de
-  cellule 8×6). Coins arrondis 12 px (cartes), 8 px (boutons/champs).
-- Densité confortable, pas « dashboardsque » : les tables ont ≥ 32 px de
-  hauteur de ligne, cible de clic ≥ 28 px.
+- Échelle de 4 px (`XS` 4 · `S` 8 · `M` 12 · `L` 16) ; marges de page 24 px en
+  large, 14 px en compact ; gouttière de grille 12 px.
+- Rayons : cartes 13 px, boutons 9 px, champs 8 px, modales 16 px.
+- Hauteur de bouton 34 px, ligne de tableau ≥ 34 px, cible de clic ≥ 28 px : la
+  densité reste confortable au doigt comme à la souris.
+- **Aucune ombre** : une carte se distingue par sa couleur et sa bordure.
 
 ### 5.4 Icônes
 
 Jeu **Material Icons** (embarqué) en 18/20 px, unicolore, héritant la couleur
 du texte. Une icône = toujours accompagnée d'un libellé texte (jamais
 d'icône seule pour une action). Pas d'emoji.
-
----
 
 ## 6. Micro-interactions et réactivité
 
@@ -387,8 +472,8 @@ d'icône seule pour une action). Pas d'emoji.
 ## 7. Accessibilité et clavier
 
 - Navigation clavier intégrale ; focus visible (contour accent 2 px).
-- Raccourcis : `Ctrl+R` actualiser · `Ctrl+N` nouvelle règle · `Ctrl+1…5`
-  onglets · `Échap` fermer modale/toast d'erreur.
+- Raccourcis : `Ctrl+R` actualiser · `Ctrl+N` nouvelle règle · `Ctrl+1…6`
+  écrans · `Échap` fermer modale/toast d'erreur.
 - Taille de texte réglable (S/M/L → facteur 0.9/1.0/1.15) — tout le layout
   s'adapte, les tables deviennent défilantes.
 - Contraste minimum AA (4.5:1) vérifié sur les deux thèmes pour les textes.
@@ -422,7 +507,9 @@ d'icône seule pour une action). Pas d'emoji.
 | Service fail2ban : démarrer/arrêter/redémarrer, recharger | ✅ | |
 | Journaux système (fail2ban, blocs UFW) | ✅ | filtres avancés |
 | Local root/polkit, SSH (mot de passe/clé, TOFU, sudo optionnel) | ✅ | agent, clés générées |
-| Journal des actions de l'app, paramètres, thèmes | ✅ | i18n EN/ES |
+| ClamAV : services, bases de signatures, mise à jour, analyse à la demande | ✅ | quarantaine |
+| Journal des actions de l'app, paramètres, thèmes système/clair/sombre | ✅ | filtre texte |
+| Interface en 8 langues (FR/EN/ES/DE/PT/IT/UK/RU) | ✅ | |
 
 ## 10. Décisions refusées (sobriété assumée)
 
@@ -434,3 +521,35 @@ d'icône seule pour une action). Pas d'emoji.
   d'un utilisateur ; l'app gère par les commandes officielles uniquement.
 - **Pas de persistance des mots de passe**, même chiffrée : le risque n'est pas
   compensé par le confort.
+
+---
+
+## 11. Refonte de l'interface (v0.3.0)
+
+L'intention d'origine est conservée — même sobriété, même transparence, mêmes
+parcours. La refonte a porté sur la **lisibilité**, la **densité** et la
+**cohérence des contrôles**, écran par écran.
+
+| Avant | Après | Pourquoi |
+|---|---|---|
+| 5 entrées de navigation | 6 entrées, groupées *Administration* / *Suivi*, badges chiffrés | Antivirus devient un écran de plein droit ; le pied de barre indique les outils détectés |
+| Titre d'écran + pastille de fraîcheur globale | Titre + sous-titre ; fraîcheur portée par **chaque carte** | Une seule horloge par donnée : plus de doublon entre l'en-tête et les cartes |
+| Pare-feu : 4 cartes + 4 chiffres | **Héro unique** (état, interrupteur, synthèse, actions), 3 tuiles, politiques + journalisation réunies | Le regard fait un seul arrêt avant d'agir ; moins de cartes à parcourir |
+| Boutons désactivés en aplat d'accent délavé | Fond neutre + contour, texte secondaire | Un bouton grisé ressemblait à une barre de progression ; l'état devient sans ambiguïté |
+| Interrupteurs tous affichés en position ON | Interrupteur animé par l'identifiant de **son** interaction | Bug egui : `ui.scope_id()` est partagé par les sous-`Ui` frères → animation et clic sur la même valeur |
+| Sélecteur segmenté empilé verticalement | Toujours horizontal, réparti sur la largeur pour l'authentification | Un sélecteur à deux choix ne doit jamais ressembler à un formulaire |
+| Fail2Ban : table puis détail empilés | **Maître-détail** 40/60, colonnes numériques alignées à droite, filtre | Lire une prison sans perdre la liste de vue |
+| ClamAV : deux cartes verticales, fraîcheur détachée | Grille services / bases, fraîcheur dans l'en-tête, actions homogènes | Même grammaire que les autres écrans |
+| Journal : texte enroulé, détail noyé | Colonnes fixes, détail = code/erreur, troncature + infobulle, copie par ligne | La lecture verticale des commandes redevient possible |
+| Réglages : thème sombre/clair, langue en menu déroulant simple | **Système** / clair / sombre, langue en liste native, raccourcis rappelés | Suivre le bureau par défaut ; 8 langues doivent rester trouvables |
+| Toasts recouvrant la barre d'état | Toasts ancrés **au-dessus** | Une notification ne doit jamais masquer l'état de l'application |
+| Tuiles 3 + 1 sur la dernière ligne | Colonnes complètes (4 → 2 × 2), largeurs conservées | Une grille irrégulière se lit comme une erreur |
+
+**Décisions refusées pendant la refonte** : pas de barre latérale repliable (un seul
+point de bascule), pas d'onglets internes aux écrans (le défilement suffit), pas de
+graphiques ni de jauges (des chiffres et des états suffisent), pas de densité
+« dashboard » (les lignes respirent à 34 px).
+
+**Vérification** : 13 captures hors écran (clair/sombre, compact/large, FR/EN/DE)
+produites par un test ignoré, contrastes AA testés unitairement, 47 tests verts,
+`cargo check` sans avertissement.

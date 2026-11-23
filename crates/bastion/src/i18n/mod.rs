@@ -65,19 +65,27 @@ impl Lang {
         Lang::En
     }
 
-    /// Code court affiché dans le sélecteur.
-    pub fn code(&self) -> &'static str {
+    /// Nom de la langue dans cette langue (sélecteur des réglages).
+    pub fn native(&self) -> &'static str {
         match self {
-            Lang::Fr => "FR",
-            Lang::En => "EN",
-            Lang::Es => "ES",
-            Lang::De => "DE",
-            Lang::Pt => "PT",
-            Lang::It => "IT",
-            Lang::Uk => "UK",
-            Lang::Ru => "RU",
+            Lang::Fr => "Français",
+            Lang::En => "English",
+            Lang::Es => "Español",
+            Lang::De => "Deutsch",
+            Lang::Pt => "Português",
+            Lang::It => "Italiano",
+            Lang::Uk => "Українська",
+            Lang::Ru => "Русский",
         }
     }
+
+    /// Toutes les langues, dans l'ordre du sélecteur.
+    pub fn all() -> [Lang; 8] {
+        [
+            Lang::Fr, Lang::En, Lang::Es, Lang::De, Lang::Pt, Lang::It, Lang::Uk, Lang::Ru,
+        ]
+    }
+
 }
 
 pub fn tr(lang: Lang) -> &'static Tr {
@@ -176,6 +184,7 @@ pub struct Tr {
     pub field_user: &'static str,
     pub hint_host: &'static str,
     pub hint_user: &'static str,
+    pub field_auth_method: &'static str,
     pub auth_password: &'static str,
     pub auth_key: &'static str,
     pub field_key_path: &'static str,
@@ -202,7 +211,6 @@ pub struct Tr {
     pub routed_disabled_note: &'static str,
     pub policy_hint: &'static str,
     pub logging_title: &'static str,
-    pub logging_hint: &'static str,
     pub rules_title: &'static str,
     pub refresh_rules_tooltip: &'static str,
     pub search_placeholder: &'static str,
@@ -210,12 +218,8 @@ pub struct Tr {
     pub col_from: &'static str,
     pub col_to_port: &'static str,
     pub col_dir: &'static str,
-    pub col_port: &'static str,
-    pub col_rules: &'static str,
     pub rules_empty: &'static str,
     pub rules_empty_hint: &'static str,
-    pub ports_active_title: &'static str,
-    pub ports_empty_hint: &'static str,
     pub v6_hint: &'static str,
     pub report_btn: &'static str,
     pub reload_btn: &'static str,
@@ -311,7 +315,6 @@ pub struct Tr {
     // ── Écran Fail2Ban
     pub f2b_subtitle: &'static str,
     pub service_label: &'static str,
-    pub fw_services_title: &'static str,
     pub fw_status_title: &'static str,
     pub state_unknown: &'static str,
     pub btn_start: &'static str,
@@ -370,11 +373,58 @@ pub struct Tr {
     pub interval_label: &'static str,
     pub refresh_hint: &'static str,
     pub section_files: &'static str,
-    pub config_path_label: &'static str,
     pub files_hint: &'static str,
     pub section_about: &'static str,
     pub about_line_t: &'static str, // {v}
     pub about_helper: &'static str,
+
+    // ── Ajouts v0.3 (coquille, bandeaux, tableaux)
+    pub nav_section_admin: &'static str,
+    pub nav_section_follow: &'static str,
+    pub more_actions: &'static str,
+    pub go_connect: &'static str,
+    pub ssh_options: &'static str,
+    pub fw_off_title: &'static str,
+    pub fw_off_body: &'static str,
+    pub fw_enable_now: &'static str,
+    pub fw_stat_rules: &'static str,
+    pub fw_stat_allow: &'static str,
+    pub fw_stat_block: &'static str,
+    pub fw_stat_logging: &'static str,
+    pub fw_technical: &'static str,
+    pub fw_no_match: &'static str,
+    pub fw_no_match_hint: &'static str,
+    pub fw_service_title: &'static str,
+    pub fw_raw_title: &'static str,
+    pub col_comment: &'static str,
+    pub f2b_stat_failed: &'static str,
+    pub f2b_search_jails: &'static str,
+    pub f2b_pick_jail: &'static str,
+    pub f2b_pick_jail_hint: &'static str,
+    pub f2b_copy_ips: &'static str,
+    pub f2b_ips_copied: &'static str,
+    pub f2b_ban_invalid: &'static str,
+    pub f2b_service_title: &'static str,
+    pub f2b_no_jail_match: &'static str,
+    pub clam_last_scan: &'static str,
+    pub clam_scan_clean_short: &'static str,
+    pub clam_scan_threats: &'static str,
+    pub clam_scan_none_yet: &'static str,
+    pub journal_col_time: &'static str,
+    pub journal_col_status: &'static str,
+    pub journal_col_command: &'static str,
+    pub journal_col_detail: &'static str,
+    pub journal_copy_view: &'static str,
+    pub journal_clear_title: &'static str,
+    pub journal_clear_body: &'static str,
+    pub journal_row_copy: &'static str,
+    pub settings_data_section: &'static str,
+    pub settings_forget_hosts: &'static str,
+    pub settings_hosts_forgotten: &'static str,
+    pub settings_open_folder: &'static str,
+    pub settings_licence: &'static str,
+    pub settings_shortcuts_section: &'static str,
+    pub settings_hosts_count_t: &'static str,
 
     // ── Toasts d'action
     pub toast_connected: &'static str,
@@ -453,6 +503,10 @@ impl Tr {
 
     pub fn jails_with_count(&self, n: usize) -> String {
         format!("{} ({})", self.jails_title, n)
+    }
+
+    pub fn hosts_count(&self, n: usize) -> String {
+        rep(self.settings_hosts_count_t, &[("{n}", &n.to_string())])
     }
 
     pub fn entries_count(&self, n: usize, cap: usize) -> String {

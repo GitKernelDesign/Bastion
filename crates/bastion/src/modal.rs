@@ -42,16 +42,18 @@ pub fn render(app: &mut GuiApp, ctx: &egui::Context, p: &Palette, modal: Modal) 
             let body = data.body.clone();
             let confirm_label = data.confirm_label.clone();
             let backdrop = show_modal(ctx, p, "confirm", &title, 440.0, |ui| {
-                ui.label(body);
-                ui.add_space(16.0);
-                ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                    if ui.add(danger_btn(p, &confirm_label)).clicked() {
-                        apply_confirm(app, &data.kind);
+                ui.label(RichText::new(body).size(crate::theme::text::BODY));
+                ui.add_space(18.0);
+                ui.horizontal(|ui| {
+                    if components::ghost_button(ui, p, app.tr.cancel_btn).clicked() {
                         close = true;
                     }
-                    if ui.button(app.tr.cancel_btn).clicked() {
-                        close = true;
-                    }
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        if components::danger_button(ui, p, &confirm_label).clicked() {
+                            apply_confirm(app, &data.kind);
+                            close = true;
+                        }
+                    });
                 });
             });
             if !close && !backdrop {
@@ -75,16 +77,26 @@ pub fn render(app: &mut GuiApp, ctx: &egui::Context, p: &Palette, modal: Modal) 
                         .font(egui::TextStyle::Monospace)
                         .desired_width(260.0),
                 );
-                ui.add_space(12.0);
-                ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                    let enabled = typed.trim().to_uppercase() == t.reset_word;
-                    if ui.add_enabled(enabled, danger_btn(p, t.reset_btn.trim_end_matches('…'))).clicked() {
-                        app.send_op(Pending::Reset, Op::UfwReset);
+                ui.add_space(14.0);
+                ui.horizontal(|ui| {
+                    if components::ghost_button(ui, p, t.cancel_btn).clicked() {
                         close = true;
                     }
-                    if ui.button(t.cancel_btn).clicked() {
-                        close = true;
-                    }
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        let enabled = typed.trim().to_uppercase() == t.reset_word;
+                        if components::styled_button_en(
+                            ui,
+                            p,
+                            t.reset_btn.trim_end_matches('…'),
+                            crate::components::BtnKind::Danger,
+                            enabled,
+                        )
+                        .clicked()
+                        {
+                            app.send_op(Pending::Reset, Op::UfwReset);
+                            close = true;
+                        }
+                    });
                 });
             });
             if !close && !backdrop {
@@ -107,11 +119,24 @@ pub fn render(app: &mut GuiApp, ctx: &egui::Context, p: &Palette, modal: Modal) 
                         .min_scrolled_height(420.0)
                         .auto_shrink([false, false])
                         .show(ui, |ui| ui.monospace(&text));
-                    ui.add_space(8.0);
-                    ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                        if ui.button(t.close_btn).clicked() {
-                            close = true;
+                    ui.add_space(10.0);
+                    ui.horizontal(|ui| {
+                        if components::styled_button(
+                            ui,
+                            p,
+                            &format!("{}  {}", crate::icons::COPY, t.copy_btn),
+                            crate::components::BtnKind::Ghost,
+                        )
+                        .clicked()
+                        {
+                            ui.ctx().copy_text(text.clone());
+                            app.toasts.info(t.journal_copied_toast.to_string());
                         }
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            if components::primary_button(ui, p, t.close_btn).clicked() {
+                                close = true;
+                            }
+                        });
                     });
                 },
             );
@@ -129,18 +154,24 @@ pub fn render(app: &mut GuiApp, ctx: &egui::Context, p: &Palette, modal: Modal) 
                     .min_scrolled_height(440.0)
                     .auto_shrink([false, false])
                     .show(ui, |ui| ui.monospace(&text));
-                ui.add_space(8.0);
-                ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                    if ui
-                        .add(egui::Button::new(components::btn_icon_text(crate::icons::COPY, t.copy_btn)))
-                        .clicked()
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    if components::styled_button(
+                        ui,
+                        p,
+                        &format!("{}  {}", crate::icons::COPY, t.copy_btn),
+                        crate::components::BtnKind::Ghost,
+                    )
+                    .clicked()
                     {
                         ui.ctx().copy_text(text.clone());
                         app.toasts.info(t.journal_copied_toast.to_string());
                     }
-                    if ui.button(t.close_btn).clicked() {
-                        close = true;
-                    }
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        if components::primary_button(ui, p, t.close_btn).clicked() {
+                            close = true;
+                        }
+                    });
                 });
             });
             if !close && !backdrop {
@@ -173,8 +204,8 @@ pub fn render(app: &mut GuiApp, ctx: &egui::Context, p: &Palette, modal: Modal) 
                     ui.add_space(6.0);
                     components::hint(ui, p, t.hk_verify_hint);
                 }
-                ui.add_space(12.0);
-                ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
+                ui.add_space(14.0);
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if components::primary_button(ui, p, t.hk_trust_btn).clicked() {
                         app.cfg.remember_host(&host, params.port, &fingerprint);
                         let mut p2 = params.clone();
@@ -183,7 +214,9 @@ pub fn render(app: &mut GuiApp, ctx: &egui::Context, p: &Palette, modal: Modal) 
                         app.worker.send(crate::worker::Job::ConnectSsh { params: p2 });
                         close = true;
                     }
-                    if ui.button(t.cancel_btn).clicked() {
+                });
+                ui.horizontal(|ui| {
+                    if components::ghost_button(ui, p, t.cancel_btn).clicked() {
                         close = true;
                     }
                 });
@@ -197,6 +230,7 @@ pub fn render(app: &mut GuiApp, ctx: &egui::Context, p: &Palette, modal: Modal) 
 
 fn apply_confirm(app: &mut GuiApp, kind: &ConfirmKind) {
     match kind {
+        ConfirmKind::ClearJournal => app.journal.clear(),
         ConfirmKind::DisableFw => app.send_op(Pending::Disable, Op::UfwDisable),
         ConfirmKind::DeleteRule { index } => {
             app.send_op(Pending::DeleteRule, Op::UfwDeleteRule { index: *index });
@@ -228,13 +262,4 @@ fn apply_confirm(app: &mut GuiApp, kind: &ConfirmKind) {
             },
         ),
     }
-}
-
-fn danger_btn(p: &Palette, label: &str) -> egui::Button<'static> {
-    egui::Button::new(
-        RichText::new(label)
-            .color(Color32::WHITE)
-            .family(egui::FontFamily::Name("Medium".into())),
-    )
-    .fill(p.danger)
 }

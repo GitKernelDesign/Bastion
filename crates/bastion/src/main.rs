@@ -1,4 +1,5 @@
-//! Bastion — interface graphique de gestion UFW & Fail2Ban (local et SSH).
+//! Bastion — interface graphique de gestion UFW, Fail2Ban et ClamAV
+//! (local et SSH).
 //!
 //! Le même binaire sert de :
 //!  - application graphique (défaut) ;
@@ -12,6 +13,8 @@ mod i18n;
 mod fonts;
 mod icons;
 mod modal;
+#[cfg(test)]
+mod snapshots;
 mod theme;
 mod toast;
 mod ui;
@@ -108,13 +111,13 @@ fn launch_gui() {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(title)
-            // Largeur volontairement bornée à 620 px : l'application se
-            // veut compacte ; 620 < COMPACT_MAX_WIDTH (720) garantit que la
-            // présentation mobile (navigation basse, une colonne) est
-            // toujours active. La hauteur reste libre.
-            .with_inner_size([620.0, 820.0])
-            .with_max_inner_size([620.0, 10_000.0])
-            // La fenêtre peut être réduite à la taille d'un téléphone.
+            // 1040 px : la barre latérale (224) et les marges laissent 760 px
+            // au contenu, seuil auquel le maître-détail Fail2Ban et les
+            // politiques à deux colonnes s'activent. La fenêtre reste
+            // rétrécissable jusqu'à la taille d'un téléphone, où l'interface
+            // bascule en navigation basse (mobile-first).
+            .with_inner_size([1040.0, 820.0])
+            .with_max_inner_size([1400.0, 10_000.0])
             .with_min_inner_size([360.0, 480.0])
             .with_icon(std::sync::Arc::new(icon)),
         ..Default::default()

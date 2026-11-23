@@ -1,22 +1,23 @@
 //! Écran Antivirus (ClamAV) : services, bases de signatures, analyse à
-//! la demande, journaux. Lecture seule pour les fichiers : aucune
+//! la demande et résultat en place. Lecture seule pour les fichiers : aucune
 //! suppression ni quarantaine automatique.
 
 use crate::app::{ConfirmData, ConfirmKind, GuiApp, Modal, Pending};
 use crate::components;
-use crate::theme::Palette;
+use crate::icons;
+use crate::theme::{space, text, Palette};
 use bastion_core::model::ClamLogSource;
 use bastion_core::op::{Op, ServiceAction};
-use egui::RichText;
+use egui::{Align, CornerRadius, Frame, Layout, Margin, RichText};
 
 pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     let t = app.tr;
-    components::screen_header(ui, p, t.nav_clamav, t.clam_subtitle);
-    ui.add_space(6.0);
 
     if app.phase != crate::app::ConnPhase::Connected {
         components::card_body(ui, p, |ui| {
-            components::empty_state(ui, p, t.status_disconnected, t.need_connection_hint);
+            if components::need_connection(ui, p, t).clicked() {
+                app.screen = crate::app::Screen::Connect;
+            }
         });
         return;
     }
@@ -36,12 +37,11 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
         return;
     }
 
-    // Grille responsive : services et bases côte à côte en fenêtre large.
     components::tile_grid(ui, p, 360.0, 2, |ui, p, i| match i {
         0 => services_card(app, ui, p),
         _ => db_card(app, ui, p),
     });
-    ui.add_space(12.0);
+    ui.add_space(space::M);
     scan_card(app, ui, p);
 }
 
@@ -49,14 +49,8 @@ pub fn render(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
 fn services_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     let t = app.tr;
     let mut refresh = false;
-    let mut restart_daemon = false;
-    let mut stop_daemon = false;
-    let mut start_daemon = false;
-    let mut restart_fresh = false;
-    let mut stop_fresh = false;
-    let mut start_fresh = false;
+    let mut action: Option<(&'static str, ServiceAction)> = None;
 
-    // Captures avant rendu (emprunts isolés).
     let daemon_state = app
         .clam
         .daemon
@@ -73,76 +67,74 @@ fn services_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
         p,
         t.clam_services_title,
         |ui| {
-            if components::icon_button(ui, p, crate::icons::REFRESH, t.tooltip_refresh).clicked() {
+            if components::icon_button(ui, p, icons::REFRESH, t.tooltip_refresh).clicked() {
                 refresh = true;
             }
         },
         |ui| {
-            // clamav-daemon (démon d'analyse).
-            service_row(app, ui, p, "clamav-daemon", &daemon_state, app.clam.daemon_at, &mut restart_daemon, &mut stop_daemon, &mut start_daemon);
-            ui.add_space(6.0);
-            // clamav-freshclam (mise à jour des bases).
-            service_row(app, ui, p, "clamav-freshclam", &freshclam_state, app.clam.freshclam_at, &mut restart_fresh, &mut stop_fresh, &mut start_fresh);
+            service_row(
+                app,
+                ui,
+                p,
+                "clamav-daemon",
+                &daemon_state,
+                app.clam.daemon_at,
+                &mut action,
+            );
+            ui.add_space(space::M);
+            components::hairline(ui, p);
+            ui.add_space(space::M);
+            service_row(
+                app,
+                ui,
+                p,
+                "clamav-freshclam",
+                &freshclam_state,
+                app.clam.freshclam_at,
+                &mut action,
+            );
         },
     );
 
     if refresh {
         app.send_op(Pending::ClamServices, Op::ClamServicesState);
     }
-    if restart_daemon {
-        app.send_op(
-            Pending::ClamService { unit: "clamav-daemon".into(), action: ServiceAction::Restart },
-            Op::ClamServiceAction { unit: "clamav-daemon".into(), action: ServiceAction::Restart },
-        );
-    }
-    if stop_daemon {
-        app.modal = Some(Modal::Confirm(ConfirmData {
-            title: t.clam_stop_title.to_string(),
-            body: t.clam_stop_body.to_string(),
-            confirm_label: t.btn_stop.to_string(),
-            kind: ConfirmKind::StopClamav { unit: "clamav-daemon".into() },
-        }));
-    }
-    if start_daemon {
-        app.send_op(
-            Pending::ClamService { unit: "clamav-daemon".into(), action: ServiceAction::Start },
-            Op::ClamServiceAction { unit: "clamav-daemon".into(), action: ServiceAction::Start },
-        );
-    }
-    if restart_fresh {
-        app.send_op(
-            Pending::ClamService { unit: "clamav-freshclam".into(), action: ServiceAction::Restart },
-            Op::ClamServiceAction { unit: "clamav-freshclam".into(), action: ServiceAction::Restart },
-        );
-    }
-    if stop_fresh {
-        app.modal = Some(Modal::Confirm(ConfirmData {
-            title: t.clam_stop_title.to_string(),
-            body: t.clam_stop_body.to_string(),
-            confirm_label: t.btn_stop.to_string(),
-            kind: ConfirmKind::StopClamav { unit: "clamav-freshclam".into() },
-        }));
-    }
-    if start_fresh {
-        app.send_op(
-            Pending::ClamService { unit: "clamav-freshclam".into(), action: ServiceAction::Start },
-            Op::ClamServiceAction { unit: "clamav-freshclam".into(), action: ServiceAction::Start },
-        );
+    if let Some((unit, act)) = action {
+        match act {
+            ServiceAction::Stop => {
+                app.modal = Some(Modal::Confirm(ConfirmData {
+                    title: t.clam_stop_title.to_string(),
+                    body: t.clam_stop_body.to_string(),
+                    confirm_label: t.btn_stop.to_string(),
+                    kind: ConfirmKind::StopClamav {
+                        unit: unit.to_string(),
+                    },
+                }));
+            }
+            other => {
+                app.send_op(
+                    Pending::ClamService {
+                        unit: unit.to_string(),
+                        action: other,
+                    },
+                    Op::ClamServiceAction {
+                        unit: unit.to_string(),
+                        action: other,
+                    },
+                );
+            }
+        }
     }
 }
 
-/// Une ligne de service : point d'état + nom + badge + actions.
-#[allow(clippy::too_many_arguments)]
 fn service_row(
-    app: &mut GuiApp,
+    app: &GuiApp,
     ui: &mut egui::Ui,
     p: &Palette,
-    name: &str,
+    name: &'static str,
     state: &str,
     at: Option<std::time::Instant>,
-    restart: &mut bool,
-    stop: &mut bool,
-    start: &mut bool,
+    action: &mut Option<(&'static str, ServiceAction)>,
 ) {
     let t = app.tr;
     let busy = app
@@ -158,37 +150,37 @@ fn service_row(
         p.text_secondary
     };
 
-    // Flux replié : état à gauche, actions dessous quand la largeur manque —
-    // les boutons ne sortent jamais de l'écran.
     ui.vertical(|ui| {
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = egui::vec2(8.0, 6.0);
-            let (rect, _) = ui.allocate_exact_size(egui::vec2(12.0, 12.0), egui::Sense::hover());
-            ui.painter().circle_filled(rect.center(), 5.0, col);
-            ui.label(RichText::new(name).monospace());
-            let bg = crate::components::blend(col, ui.style().visuals.panel_fill, 0.18);
-            components::badge(ui, p, state, col, bg);
+            components::status_dot(ui, col, 8.0);
+            ui.label(
+                RichText::new(name)
+                    .monospace()
+                    .family(egui::FontFamily::Name("MonoMedium".into())),
+            );
+            components::tag(ui, p, state, col);
             if let Some(at) = at {
                 components::since_label(ui, p, t, at);
             }
+            if busy {
+                ui.add(egui::Spinner::new().size(12.0));
+            }
         });
-        ui.add_space(4.0);
+        ui.add_space(space::XS);
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
             if active {
                 if components::ghost_button(ui, p, t.btn_restart).clicked() {
-                    *restart = true;
+                    *action = Some((name, ServiceAction::Restart));
                 }
-                if components::ghost_button(ui, p, t.btn_stop).clicked() {
-                    *stop = true;
+                if components::styled_button(ui, p, t.btn_stop, components::BtnKind::Ghost)
+                    .clicked()
+                {
+                    *action = Some((name, ServiceAction::Stop));
                 }
-            } else if app.clam.daemon.is_some() {
-                if components::primary_button(ui, p, t.btn_start).clicked() {
-                    *start = true;
-                }
-            }
-            if busy {
-                ui.add(egui::Spinner::new().size(14.0));
+            } else if components::primary_button(ui, p, t.btn_start).clicked() {
+                *action = Some((name, ServiceAction::Start));
             }
         });
     });
@@ -201,7 +193,6 @@ fn db_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     let mut update = false;
     let mut logs_daemon = false;
     let mut logs_freshclam = false;
-
     let db = app.clam.db.clone();
     let db_at = app.clam.db_at;
 
@@ -210,11 +201,20 @@ fn db_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
         p,
         t.clam_db_title,
         |ui| {
-            if components::icon_button(ui, p, crate::icons::REFRESH, t.tooltip_refresh).clicked() {
+            if let Some(at) = db_at {
+                components::since_label(ui, p, t, at);
+                ui.add_space(2.0);
+            }
+            if components::icon_button(ui, p, icons::REFRESH, t.tooltip_refresh).clicked() {
                 refresh = true;
             }
-            if components::primary_button_small(ui, p, crate::icons::REFRESH, t.clam_update_btn)
-                .clicked()
+            if components::styled_button(
+                ui,
+                p,
+                &format!("{}  {}", icons::UPDATE, t.clam_update_btn),
+                components::BtnKind::Primary,
+            )
+            .clicked()
             {
                 update = true;
             }
@@ -222,44 +222,63 @@ fn db_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
         |ui| {
             match &db {
                 Some(db) => {
-                    ui.horizontal_wrapped(|ui| {
-                        ui.spacing_mut().item_spacing = egui::vec2(8.0, 6.0);
-                        ui.label(RichText::new(t.clam_db_engine).size(12.5).color(p.text_secondary));
-                        ui.label(RichText::new(&db.engine).monospace());
-                        ui.label(RichText::new(t.clam_db_sigs).size(12.5).color(p.text_secondary));
-                        ui.label(RichText::new(db.sigs.to_string()).monospace());
-                        if let Some(at) = db_at {
-                            components::since_label(ui, p, t, at);
-                        }
-                    });
-                    ui.horizontal_wrapped(|ui| {
-                        ui.spacing_mut().item_spacing = egui::vec2(8.0, 6.0);
-                        ui.label(RichText::new(t.clam_db_date).size(12.5).color(p.text_secondary));
-                        ui.label(RichText::new(&db.db_date).monospace());
-                    });
+                    egui::Grid::new("clam-db")
+                        .num_columns(2)
+                        .spacing(egui::vec2(14.0, 8.0))
+                        .show(ui, |ui| {
+                            ui.label(
+                                RichText::new(t.clam_db_engine)
+                                    .size(text::SMALL)
+                                    .color(p.text_secondary),
+                            );
+                            ui.label(RichText::new(&db.engine).monospace());
+                            ui.end_row();
+                            ui.label(
+                                RichText::new(t.clam_db_sigs)
+                                    .size(text::SMALL)
+                                    .color(p.text_secondary),
+                            );
+                            ui.label(
+                                RichText::new(thousands(db.sigs))
+                                    .monospace()
+                                    .family(egui::FontFamily::Name("MonoMedium".into())),
+                            );
+                            ui.end_row();
+                            ui.label(
+                                RichText::new(t.clam_db_date)
+                                    .size(text::SMALL)
+                                    .color(p.text_secondary),
+                            );
+                            ui.label(RichText::new(&db.db_date).monospace());
+                            ui.end_row();
+                        });
                 }
                 None => {
                     components::hint(ui, p, t.clam_db_unknown);
                 }
             }
-            ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
-                if ui
-                    .add(egui::Button::new(components::btn_icon_text(
-                        crate::icons::HISTORY,
-                        t.clam_logs_daemon_btn,
-                    )))
-                    .clicked()
+            ui.add_space(space::M);
+            components::hairline(ui, p);
+            ui.add_space(space::M);
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(8.0, 6.0);
+                if components::styled_button(
+                    ui,
+                    p,
+                    &format!("{}  {}", icons::ARTICLE, t.clam_logs_daemon_btn),
+                    components::BtnKind::Quiet,
+                )
+                .clicked()
                 {
                     logs_daemon = true;
                 }
-                if ui
-                    .add(egui::Button::new(components::btn_icon_text(
-                        crate::icons::HISTORY,
-                        t.clam_logs_freshclam_btn,
-                    )))
-                    .clicked()
+                if components::styled_button(
+                    ui,
+                    p,
+                    &format!("{}  {}", icons::ARTICLE, t.clam_logs_freshclam_btn),
+                    components::BtnKind::Quiet,
+                )
+                .clicked()
                 {
                     logs_freshclam = true;
                 }
@@ -276,62 +295,85 @@ fn db_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     if logs_daemon {
         app.send_op(
             Pending::ClamLogs,
-            Op::ClamLogs { which: ClamLogSource::Daemon, lines: 300 },
+            Op::ClamLogs {
+                which: ClamLogSource::Daemon,
+                lines: 300,
+            },
         );
     }
     if logs_freshclam {
         app.send_op(
             Pending::ClamLogs,
-            Op::ClamLogs { which: ClamLogSource::Freshclam, lines: 300 },
+            Op::ClamLogs {
+                which: ClamLogSource::Freshclam,
+                lines: 300,
+            },
         );
     }
+}
+
+/// 2861247 → « 2 861 247 » (fine insécable, lisible en tableau).
+fn thousands(n: u64) -> String {
+    let s = n.to_string();
+    let mut out = String::with_capacity(s.len() + s.len() / 3);
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i) % 3 == 0 {
+            out.push('\u{202f}');
+        }
+        out.push(c);
+    }
+    out
 }
 
 // ─── Analyse à la demande ────────────────────────────────────────────────────
 fn scan_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
     let t = app.tr;
     let mut scan = false;
+    let mut copy = false;
     let busy = app.pending.values().any(|x| matches!(x, Pending::ClamScan));
     let daemon_active = app.clam.daemon.as_deref() == Some("active");
-
     // Le sélecteur de dossier n'a de sens qu'en local : en SSH, la cible
     // est distante et seul le chemin saisi à la main s'applique.
     let local_target = !app.conn_desc.starts_with("SSH");
 
     components::card(ui, p, t.clam_scan_title, |_| {}, |ui| {
-        ui.label(RichText::new(t.clam_scan_path_label).size(12.5).color(p.text_secondary));
-        // Rangée adaptative : champ + boutons sur une ligne en fenêtre
-        // large ; champ pleine largeur puis boutons dessous en fenêtre
-        // étroite.
+        ui.label(
+            RichText::new(t.clam_scan_path_label)
+                .size(text::SMALL)
+                .color(p.text_secondary)
+                .family(egui::FontFamily::Name("Medium".into())),
+        );
         let avail = ui.available_width();
-        let inline = avail >= 620.0;
+        let inline = avail >= 560.0;
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
             let resp = ui.add(
                 egui::TextEdit::singleline(&mut app.clam.scan_path)
                     .hint_text(t.clam_scan_hint)
-                    // Réserve la place des boutons et du spinner.
                     .desired_width(if inline {
-                        (avail - 350.0).max(160.0)
+                        (avail - 330.0).max(160.0)
                     } else {
                         (ui.available_width() - 8.0).max(160.0)
                     })
+                    .margin(Margin::symmetric(10, 8))
                     .font(egui::TextStyle::Monospace),
             );
             let path_ok = {
                 let s = app.clam.scan_path.trim();
-                s.starts_with('/') && !s.starts_with("/proc") && !s.starts_with("/sys")
-                    && !s.starts_with("/dev") && !s.starts_with("/run")
+                s.starts_with('/')
+                    && !s.starts_with("/proc")
+                    && !s.starts_with("/sys")
+                    && !s.starts_with("/dev")
+                    && !s.starts_with("/run")
             };
             let enabled = path_ok && !busy && !app.clam.picking;
             if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && enabled {
                 scan = true;
             }
-            // Sélecteur de dossier natif (portail xdg), barre conservée.
             if components::styled_button_en(
                 ui,
                 p,
-                &format!("{}  {}", crate::icons::FOLDER, t.clam_browse_btn),
+                &format!("{}  {}", icons::FOLDER, t.clam_browse_btn),
                 components::BtnKind::Soft,
                 local_target && !app.clam.picking,
             )
@@ -340,12 +382,10 @@ fn scan_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 app.clam.picking = true;
                 app.worker.send(crate::worker::Job::PickFolder);
             }
-            // Bouton d'analyse large ; pendant le travail, la loupe est
-            // remplacée par un spinner peint DANS le bouton.
             let label = if busy {
                 format!("    {}", t.clam_scan_btn)
             } else {
-                format!("{}  {}", crate::icons::SEARCH, t.clam_scan_btn)
+                format!("{}  {}", icons::SEARCH, t.clam_scan_btn)
             };
             let busy_btn = components::styled_button_minw(
                 ui,
@@ -353,16 +393,15 @@ fn scan_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 &label,
                 components::BtnKind::Primary,
                 enabled,
-                170.0,
-            )
-            .on_hover_text(t.clam_scan_hint);
+                150.0,
+            );
             if busy {
                 let r = busy_btn.rect;
-                egui::Spinner::new().size(16.0).paint_at(
+                egui::Spinner::new().size(15.0).paint_at(
                     ui,
                     egui::Rect::from_min_size(
-                        egui::pos2(r.left() + 16.0, r.center().y - 8.0),
-                        egui::vec2(16.0, 16.0),
+                        egui::pos2(r.left() + 14.0, r.center().y - 7.5),
+                        egui::vec2(15.0, 15.0),
                     ),
                 );
             }
@@ -370,12 +409,102 @@ fn scan_card(app: &mut GuiApp, ui: &mut egui::Ui, p: &Palette) {
                 scan = true;
             }
         });
-        ui.add_space(4.0);
+        ui.add_space(space::S);
         components::hint(ui, p, t.clam_scan_daemon_note);
+
+        // Résultat de la dernière analyse, en place (pas de popin).
+        ui.add_space(space::M);
+        match &app.clam.last_scan {
+            None => {
+                components::hint(ui, p, t.clam_scan_none_yet);
+            }
+            Some((infected, at)) => {
+                let clean = infected.is_empty();
+                let tone = if clean { p.success } else { p.danger };
+                Frame::NONE
+                    .fill(p.soft(tone))
+                    .corner_radius(CornerRadius::same(10))
+                    .inner_margin(Margin::same(12))
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.horizontal(|ui| {
+                            ui.label(icons::icon_sz(
+                                if clean {
+                                    icons::CHECK_CIRCLE
+                                } else {
+                                    icons::WARNING
+                                },
+                                16.0,
+                                tone,
+                            ));
+                            ui.label(
+                                RichText::new(t.clam_last_scan)
+                                    .size(text::SMALL)
+                                    .color(p.text)
+                                    .family(egui::FontFamily::Name("Medium".into())),
+                            );
+                            let verdict = if clean {
+                                t.clam_scan_clean_short.to_string()
+                            } else {
+                                format!("{} {}", infected.len(), t.clam_scan_threats)
+                            };
+                            ui.label(RichText::new(verdict).size(text::SMALL).color(tone));
+                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                components::since_label(ui, p, t, *at);
+                            });
+                        });
+                        if !clean {
+                            ui.add_space(space::S);
+                            for (path, virus) in infected.iter().take(12) {
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.label(RichText::new(path).monospace().size(text::MONO));
+                                    ui.label(
+                                        RichText::new(virus)
+                                            .monospace()
+                                            .size(text::MICRO)
+                                            .color(p.danger),
+                                    );
+                                });
+                            }
+                            if infected.len() > 12 {
+                                components::hint(ui, p, "…");
+                            }
+                            ui.add_space(space::S);
+                            if components::styled_button(
+                                ui,
+                                p,
+                                &format!("{}  {}", icons::COPY, t.copy_btn),
+                                components::BtnKind::Ghost,
+                            )
+                            .clicked()
+                            {
+                                copy = true;
+                            }
+                        }
+                    });
+            }
+        }
     });
 
     if scan && !busy {
         let path = app.clam.scan_path.trim().to_string();
-        app.send_op(Pending::ClamScan, Op::ClamScan { path, use_daemon: daemon_active });
+        app.send_op(
+            Pending::ClamScan,
+            Op::ClamScan {
+                path,
+                use_daemon: daemon_active,
+            },
+        );
+    }
+    if copy {
+        if let Some((infected, _)) = &app.clam.last_scan {
+            let text = infected
+                .iter()
+                .map(|(p, v)| format!("{p}\t{v}"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            ui.ctx().copy_text(text);
+            app.toasts.info(t.journal_copied_toast.to_string());
+        }
     }
 }

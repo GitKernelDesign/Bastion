@@ -1,6 +1,6 @@
 # Bastion
 
-**Interface graphique simple, sobre et élégante pour gérer intégralement UFW et Fail2Ban — en local ou sur un ordinateur distant via SSH.**
+**Interface graphique simple, sobre et élégante pour gérer intégralement UFW, Fail2Ban et ClamAV — en local ou sur un ordinateur distant via SSH.**
 
 Écrite en Rust pur (interface [egui](https://github.com/emilk/egui), client SSH [russh](https://github.com/Eugeny/russh) embarqué), distribuée en **AppImage** autonome. Interface disponible en **huit langues : français, anglais, espagnol, allemand, portugais, italien, ukrainien et russe** (détection automatique, modifiable dans les réglages).
 
@@ -8,24 +8,55 @@
 
 ## Captures d'écran
 
-![Bastion — capture d'écran 1](screenshots/captureBastion001.png)
-![Bastion — capture d'écran 2](screenshots/captureBastion002.png)
+**Connexion** — fenêtre compacte (360–720 px) : navigation en bas d'écran, cartes empilées.
+
+![Écran de connexion](screenshots/connexion.png)
+
+**Pare-feu** — fenêtre large : bandeau d'état, trois indicateurs, politiques et journalisation réunies, table des règles.
+
+![Écran Pare-feu](screenshots/pare-feu.png)
+
+**Fail2Ban** — maître-détail : la liste des prisons à gauche, le détail et le bannissement à droite (thème sombre).
+
+![Écran Fail2Ban](screenshots/fail2ban.png)
+
+**Antivirus** — services ClamAV, bases de signatures et analyse à la demande.
+
+![Écran Antivirus](screenshots/antivirus.png)
+
+**Journal** — chaque commande exécutée, horodatée, avec son code de retour.
+
+![Écran Journal](screenshots/journal.png)
+
+---
+
+## Interface
+
+Une seule grammaire visuelle pour les six écrans, pensée pour être lue d'un coup d'œil :
+
+- **Bandeau supérieur** (54 px) : cible courante (« Local (assistant root) », « user@hôte » ou « Non connecté »), actualiser, menu. C'est la réponse permanente à « sur quelle machine suis-je ? » ;
+- **Titre et sous-titre d'écran**, puis des **cartes** de 13 px de rayon, sans ombre : la profondeur vient des couches de couleur (chrome plus sombre, fond de travail, cartes) ;
+- **Trois tuiles de chiffres** en haut de chaque écran de domaine (règles / autorisations / blocages, prisons / bannies / échecs…), suivies du détail ;
+- **Accent terracotta unique** (repris de l'icône) ; le vert, l'ambre et le rouge restent réservés aux états — jamais de couleur décorative ;
+- **Mode compact** sous 720 px : la barre latérale devient une navigation basse et les colonnes secondaires des tableaux s'effacent ;
+- **Thème système / clair / sombre**, taille de texte réglable, contrastes AA vérifiés par des tests.
+
+Le détail des choix (personas, parcours, décisions refusées) est dans **[docs/ERGONOMIE.md](docs/ERGONOMIE.md)**.
 
 ---
 
 ## Fonctionnalités
 
 ### Pare-feu UFW
-- État du pare-feu en un coup d'œil, activation/désactivation avec confirmation ;
-- Politiques par défaut (entrée / sortie / routage : autoriser, refuser, rejeter) ;
-- Niveau de journalisation (désactivé → complet) ;
-- Règles : liste numérotée, recherche instantanée, ajout (port, plage, liste, service, profil d'application, adresse source/destination CIDR, position d'insertion, commentaire), suppression avec confirmation ;
+- État du pare-feu en un coup d'œil (actif/inactif, service, version), activation/désactivation avec confirmation et interrupteur unique ;
+- Politiques par défaut (entrée / sortie / routage : autoriser, refuser, rejeter) et niveau de journalisation réunis dans une seule carte, appliqués immédiatement ;
+- Règles : liste numérotée, recherche instantanée, ajout (port, plage, liste, service, profil d'application, adresse source/destination CIDR, position d'insertion, commentaire) avec **aperçu de la commande exacte**, suppression avec confirmation ;
 - Rapport UFW, rechargement, réinitialisation (double confirmation par saisie).
 
 ### Fail2Ban
-- État du service (démarrer / arrêter / redémarrer / recharger) ;
-- Prisons : liste, détails (échecs, bannies, fichiers surveillés, bantime / findtime / maxretry) ;
-- Bannir / débannir une IP, liste globale (« toutes les IP bannies ») ;
+- État du service (démarrer / arrêter / redémarrer / recharger) et trois indicateurs : prisons, IP bannies, échecs ;
+- Prisons : liste filtrable à colonnes alignées, détail (échecs, bannies, fichiers surveillés, bantime / findtime / maxretry) ;
+- Bannir / débannir une IP (avec annulation par notification), liste globale (« toutes les IP bannies ») ;
 - Journaux du service (`journalctl -u fail2ban`) et blocages UFW (`journalctl -k --grep UFW`).
 
 ### Antivirus ClamAV
@@ -39,10 +70,11 @@
 - **SSH** : mot de passe ou clé privée (avec phrase secrète), profils enregistrés, préfixe `sudo` optionnel, validation de la clé du serveur à la première connexion (TOFU) et alerte si elle change.
 
 ### Confort
-- **Interface responsive mobile-first** : sous 720 px de large (fenêtre réduite, petit écran), la navigation passe en bas d'écran, les tuiles s'empilent en une colonne et les tableaux masquent leurs colonnes secondaires ; plus large, les cartes forment une grille multi-colonnes et la navigation devient une barre latérale ;
-- Journal intégré : chaque commande exécutée est horodatée et visible (filtres, copie) ;
-- Actualisation automatique (3–60 s), notifications, annulation des bannissements/débannissements ;
-- Thème sombre/clair, taille de texte réglable, raccourcis clavier (`Ctrl+1…5`, `Ctrl+R`, `Ctrl+N`) ;
+- **Interface responsive mobile-first** : sous 720 px de large (fenêtre réduite, petit écran), la navigation passe en bas d'écran, les tuiles s'empilent en une colonne et les tableaux masquent leurs colonnes secondaires ; plus large, les cartes forment une grille multi-colonnes et la navigation devient une barre latérale (224 px) ;
+- Fenêtre par défaut 1040 × 820 (barre latérale + deux colonnes), redimensionnable de 360 × 480 à l'écran entier ;
+- Journal intégré : chaque commande exécutée est horodatée et visible (filtres comptés, copie d'une ligne ou de la vue, effacement confirmé) ;
+- Actualisation automatique (3–60 s), notifications de succès désactivables, annulation des bannissements/débannissements ;
+- Thème système/clair/sombre, taille de texte réglable (A− / A / A+), raccourcis clavier (`Ctrl+1…6`, `Ctrl+R`, `Ctrl+N`, `Échap`) ;
 - Langue : français, anglais, espagnol, allemand, portugais, italien, ukrainien, russe — détectée au premier lancement, persistée.
 
 ## Sécurité (en bref)
@@ -60,15 +92,15 @@ L'ergonomie complète (personas, parcours, système de design, décisions refus�
 ## Utilisation
 
 ```bash
-# Rendre exécutable puis lancer :
-chmod +x Bastion-0.2.0-x86_64.AppImage
-./Bastion-0.2.0-x86_64.AppImage
+# Rendre exécutable puis lancer (remplacez <version> par celle du fichier) :
+chmod +x Bastion-<version>-x86_64.AppImage
+./Bastion-<version>-x86_64.AppImage
 ```
 
 - **Cet ordinateur** → *Se connecter* → saisissez votre mot de passe une fois (agent polkit de votre bureau) ;
 - **SSH** → hôte, port, utilisateur, mot de passe ou clé, *Se connecter* (l'option « via sudo » convient aux connexions non-root).
 
-La langue se choisit dans **Réglages → Apparence → Langue** (FR / EN / ES / DE / PT / IT / UK / RU) ; la détection initiale suit `LANG`/`LC_MESSAGES`.
+La langue se choisit dans **Paramètres → Apparence → Langue** (FR / EN / ES / DE / PT / IT / UK / RU) ; la détection initiale suit `LANG`/`LC_MESSAGES`. Le thème suit le système par défaut, ou se fixe en clair/sombre.
 
 > **GLIBC / Debian 13** — l'AppImage est compilé sur **Debian 13 stable (glibc 2.41)** et fonctionne sur toute distribution dotée de glibc ≥ 2.41. L'erreur `version 'GLIBC_2.43' not found` venait d'un binaire compilé sur une distribution plus récente : reconstruisez toujours l'AppImage **sur la machine (ou la distribution) cible la plus ancienne** avec `./packaging/build.sh` — le script vérifie désormais automatiquement que le binaire n'exige pas un glibc plus récent que le système hôte.
 
@@ -77,10 +109,19 @@ La langue se choisit dans **Réglages → Apparence → Langue** (FR / EN / ES /
 ```bash
 # Prérequis : Rust (rustup), gcc (paquet build-essential)
 cargo build --release            # binaire : target/release/bastion
-cargo test                       # tests unitaires (parseurs, whitelist, protocole, i18n, mise en page responsive)
+cargo test --offline             # 47 tests : parseurs, liste blanche, protocole, i18n, mise en page, contrastes
+cargo check --offline            # aucun avertissement attendu
+# Deux tests sont ignorés par défaut, dont le harnais de captures (ci-dessous).
 
 # AppImage complet :
-./packaging/build.sh             # → dist/Bastion-0.1.1-x86_64.AppImage
+./packaging/build.sh             # → dist/Bastion-<version>-x86_64.AppImage
+```
+
+Les captures d'écran du README sont produites par un test ignoré qui rastérise l'interface hors écran (aucun serveur graphique requis) :
+
+```bash
+cargo test --offline --bin bastion captures -- --ignored --nocapture
+# → /tmp/bastion-snapshots/*.png
 ```
 
 ## Architecture
@@ -91,18 +132,22 @@ crates/
 │   ├── exec.rs           # CommandSpec + liste blanche + échappement shell
 │   ├── ufw.rs            # Commandes ufw + parseurs (status verbose/numbered…)
 │   ├── fail2ban.rs       # Commandes fail2ban-client + parseurs tolérants
+│   ├── clamav.rs         # Commandes clamd/freshclam + parseurs
 │   ├── local.rs          # Transport root direct
 │   ├── helper.rs         # Assistant root (serveur socket UNIX + client)
 │   ├── ssh.rs            # Transport russh (TOFU, sudo, auth mot de passe/clé)
 │   ├── op.rs             # Opérations de haut niveau (Op → OpResult)
 │   └── model.rs          # Règles, prisons, états…
 └── bastion/              # Interface egui
-    ├── app.rs            # État, événements worker, opérations pendantes
+    ├── app.rs            # État, événements worker, opérations pendantes, raccourcis
     ├── worker.rs         # Thread async ↔ UI (journalisation de chaque commande)
-    ├── theme.rs          # Palette sobre, typographie IBM Plex
-    ├── i18n/             # Traductions FR / EN / ES / DE / PT / IT / UK / RU, détection de langue
-    ├── ui/               # 5 écrans (connexion, pare-feu, fail2ban, journal, réglages)
-    └── modal.rs          # Confirmations, ajout de règle, clé serveur…
+    ├── theme.rs          # Palettes clair/sombre (3 couches), échelles texte/espace/forme
+    ├── components.rs     # Design system : cartes, boutons, tuiles, champs, switch, tableaux
+    ├── modal.rs          # Confirmations, ajout de règle, clé serveur…
+    ├── toast.rs          # Notifications ancrées au-dessus de la barre d'état
+    ├── i18n/             # Traductions FR / EN / ES / DE / PT / IT / UK / RU, détection
+    ├── snapshots.rs      # Harnais de captures (rastériseur + PNG, 13 cas)
+    └── ui/               # 6 écrans (connexion, pare-feu, fail2ban, antivirus, journal, réglages)
 ```
 
 ## Limites connues (v1)
@@ -110,7 +155,7 @@ crates/
 - Pas de réordonnancement glisser-déposer des règles (insertion par position disponible) ;
 - Pas d'édition de `jail.local` par formulaire (gestion par les commandes officielles uniquement) ;
 - La journalisation système en SSH suppose `systemd` sur la cible ;
-- L'AppImage est construit sur glibc 2.43 (Debian 13/14) : pour une distribution plus ancienne, recompilez avec `packaging/build.sh`.
+- L'AppImage est construit sur glibc 2.41 (Debian 13) : pour une distribution plus ancienne, recompilez avec `packaging/build.sh`.
 
 ## Licence
 

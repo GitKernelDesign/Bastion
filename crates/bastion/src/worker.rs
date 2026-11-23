@@ -69,6 +69,17 @@ impl WorkerHandle {
         WorkerHandle { tx: tx_jobs, rx: rx_ev }
     }
 
+    /// Worker sans thread : les jobs sont ignorés et aucun événement n'arrive.
+    /// Utilisé par les captures hors écran (tests), pour ne lancer aucune
+    /// commande système.
+    #[cfg(test)]
+    pub fn inert() -> WorkerHandle {
+        let (tx_jobs, rx_jobs) = std::sync::mpsc::channel::<Job>();
+        std::mem::forget(rx_jobs);
+        let (_tx_ev, rx_ev) = std::sync::mpsc::channel::<Event>();
+        WorkerHandle { tx: tx_jobs, rx: rx_ev }
+    }
+
     pub fn send(&self, job: Job) {
         let _ = self.tx.send(job);
     }
