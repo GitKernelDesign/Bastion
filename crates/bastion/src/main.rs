@@ -11,6 +11,7 @@ mod components;
 mod config;
 mod i18n;
 mod fonts;
+mod glibc_compat;
 mod icons;
 mod modal;
 #[cfg(test)]

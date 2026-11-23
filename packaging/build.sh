@@ -62,6 +62,20 @@ if command -v objdump >/dev/null 2>&1; then
             exit 1
         fi
         echo "── Binaire compatible glibc ≥ ${MAX_REQ} (système : ${HOST_GLIBC}) ✓"
+
+        # Cible de compatibilité de l'AppImage : Debian 13 (glibc 2.41).
+        # Surchargeable (ex. TARGET_GLIBC=2.39 pour viser Ubuntu 24.04).
+        # Ce contrôle attrape le cas inverse du précédent : un système de
+        # construction récent (2.43) qui estampille des symboles trop récents
+        # pour la cible, alors que le binaire « passe » sur la machine hôte.
+        TARGET_GLIBC="${TARGET_GLIBC:-2.41}"
+        NEWEST_TARGET="$(printf '%s\n%s\n' "$TARGET_GLIBC" "$MAX_REQ" | sort -V | tail -1)"
+        if [ "$NEWEST_TARGET" != "$TARGET_GLIBC" ]; then
+            echo "ERREUR : le binaire exige GLIBC_${MAX_REQ} ; cible déclarée : ${TARGET_GLIBC}." >&2
+            echo "        Voir crates/bastion/src/glibc_compat.rs, ou compiler sur la distribution cible." >&2
+            exit 1
+        fi
+        echo "── Cible glibc ${TARGET_GLIBC} respectée (exigence ${MAX_REQ}) ✓"
     fi
 else
     echo "⚠ objdump indisponible : contrôle GLIBC ignoré." >&2

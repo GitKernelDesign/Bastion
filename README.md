@@ -92,9 +92,9 @@ L'ergonomie complète (personas, parcours, système de design, décisions refus�
 ## Utilisation
 
 ```bash
-# Rendre exécutable puis lancer (remplacez <version> par celle du fichier) :
-chmod +x Bastion-<version>-x86_64.AppImage
-./Bastion-<version>-x86_64.AppImage
+# Rendre exécutable puis lancer :
+chmod +x Bastion-0.3.0-x86_64.AppImage
+./Bastion-0.3.0-x86_64.AppImage
 ```
 
 - **Cet ordinateur** → *Se connecter* → saisissez votre mot de passe une fois (agent polkit de votre bureau) ;
@@ -102,14 +102,14 @@ chmod +x Bastion-<version>-x86_64.AppImage
 
 La langue se choisit dans **Paramètres → Apparence → Langue** (FR / EN / ES / DE / PT / IT / UK / RU) ; la détection initiale suit `LANG`/`LC_MESSAGES`. Le thème suit le système par défaut, ou se fixe en clair/sombre.
 
-> **GLIBC / Debian 13** — l'AppImage est compilé sur **Debian 13 stable (glibc 2.41)** et fonctionne sur toute distribution dotée de glibc ≥ 2.41. L'erreur `version 'GLIBC_2.43' not found` venait d'un binaire compilé sur une distribution plus récente : reconstruisez toujours l'AppImage **sur la machine (ou la distribution) cible la plus ancienne** avec `./packaging/build.sh` — le script vérifie désormais automatiquement que le binaire n'exige pas un glibc plus récent que le système hôte.
+> **GLIBC** — l'AppImage **n'exige que glibc ≥ 2.39** (vérifié à chaque empaquetage) : il fonctionne sur Debian 13 (glibc 2.41), Ubuntu 24.04 (2.39) et au-delà. L'AppImage 0.3.0 est compilé sur Debian forky/sid (glibc 2.43) : les quelques symboles `*f` que cette version re-versionne sont fournis localement par `crates/bastion/src/glibc_compat.rs`, sinon le binaire réclamerait `GLIBC_2.43` et échouerait sur Debian 13 avec `version 'GLIBC_2.43' not found`. `packaging/build.sh` refuse désormais un binaire qui dépasserait la cible `TARGET_GLIBC` (2.41 par défaut, surchargeable : `TARGET_GLIBC=2.39 ./packaging/build.sh`) ; compiler sur la distribution cible la plus ancienne reste la meilleure garantie.
 
 ## Compilation depuis les sources
 
 ```bash
 # Prérequis : Rust (rustup), gcc (paquet build-essential)
 cargo build --release            # binaire : target/release/bastion
-cargo test --offline             # 47 tests : parseurs, liste blanche, protocole, i18n, mise en page, contrastes
+cargo test --offline             # 48 tests : parseurs, liste blanche, protocole, i18n, mise en page, contrastes
 cargo check --offline            # aucun avertissement attendu
 # Deux tests sont ignorés par défaut, dont le harnais de captures (ci-dessous).
 
@@ -145,6 +145,7 @@ crates/
     ├── components.rs     # Design system : cartes, boutons, tuiles, champs, switch, tableaux
     ├── modal.rs          # Confirmations, ajout de règle, clé serveur…
     ├── toast.rs          # Notifications ancrées au-dessus de la barre d'état
+    ├── glibc_compat.rs   # Shim GLIBC : l'AppImage n'exige que la 2.39
     ├── i18n/             # Traductions FR / EN / ES / DE / PT / IT / UK / RU, détection
     ├── snapshots.rs      # Harnais de captures (rastériseur + PNG, 13 cas)
     └── ui/               # 6 écrans (connexion, pare-feu, fail2ban, antivirus, journal, réglages)
@@ -155,7 +156,7 @@ crates/
 - Pas de réordonnancement glisser-déposer des règles (insertion par position disponible) ;
 - Pas d'édition de `jail.local` par formulaire (gestion par les commandes officielles uniquement) ;
 - La journalisation système en SSH suppose `systemd` sur la cible ;
-- L'AppImage est construit sur glibc 2.41 (Debian 13) : pour une distribution plus ancienne, recompilez avec `packaging/build.sh`.
+- L'AppImage exige glibc ≥ 2.39 ; sur une distribution plus ancienne (Debian 12, glibc 2.36), recompilez avec `packaging/build.sh` sur la cible.
 
 ## Licence
 
